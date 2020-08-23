@@ -4,6 +4,8 @@ import matplotlib.ticker as ticker
 import matplotlib.dates as mdates
 from mpl_finance import plot_day_summary_ohlc
 
+import pandas as pd
+
 from loader import retrieve_polo
 from datetime import datetime
 
@@ -24,6 +26,18 @@ gs_all = gridspec.GridSpec(max_snapshots, 1, figure=fig)
 
 dates = mdates.date2num([datetime.fromtimestamp(segment[i,0]) for i in range(segment.shape[0])])
 ohlc = [[dates[i], segment[i,1], segment[i,3], segment[i,4], segment[i,2]] for i in range(segment.shape[0])]
+
+# numpy array를 pandas DataFrame으로 바꾸면 pandas에서 제공하는 보다 편리한 기능들(아래 rolling, ewm 등)을 활용할 수 있다.
+segment_pd = pd.DataFrame(data=segment[:,1:], index=dates, columns=['open', 'close', 'high', 'low', 'volume'])
+
+# pandas DataFrame은 이런식으로 index 번호가 아닌, 위에서 columns 파라미터로 지정된 label로 각 column을 지정한다.
+hsma40 = segment_pd['high'].rolling(40).mean()
+lsma40 = segment_pd['low'].rolling(40).mean()
+ema15 = segment_pd['close'].ewm(15).mean()
+
+print(hsma40.describe())
+print(lsma40.describe())
+print(ema15.describe())
 
 for i in range(segment.shape[0]):
     ts = segment[i,0]
@@ -52,6 +66,9 @@ for i in range(segment.shape[0]):
             plt.xticks([dates[i]], rotation=0)
             ax.add_patch(mask_h(plt, dates[i] - (30/(24*60)/2), dates[i] + (30/(24*60)/2), min_y, max_y, 'yellow', 1.0))
             plot_day_summary_ohlc(ax, ohlc[begin:end])
+            ax.plot(hsma40[dates[begin]:dates[end]], color = 'blue', linewidth = 2, label='High, 40-Day SMA')
+            ax.plot(lsma40[dates[begin]:dates[end]], color = 'blue', linewidth = 2, label='Low, 40-Day SMA')
+            ax.plot(ema15[dates[begin]:dates[end]], color = 'red', linestyle='--', linewidth = 2, label='Close, 15-Day EMA')
 
             ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M:%S'))
 
