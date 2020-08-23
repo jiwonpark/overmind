@@ -7,6 +7,9 @@ from mpl_finance import plot_day_summary_ohlc
 from loader import retrieve_polo
 from datetime import datetime
 
+def mask_h(plt, x1, x2, min_y, max_y, color, alpha):
+    return plt.Rectangle((x1, min_y), x2 - x1, max_y - min_y, linewidth=0, alpha=alpha, edgecolor=color, facecolor=color)
+
 segment = retrieve_polo('USDT_LTC', 30, '2020-08-10', '2020-08-16') # 요구된 봉 데이터를 Poloniex 거래소 API로 읽어와서 n x 6 크기의 numpy array로 만들어주는 함수
 
 purge_percent_threshold = 1
@@ -46,6 +49,10 @@ for i in range(segment.shape[0]):
             ax = fig.add_subplot(gs_all[snapshots_count], ylim=(min_y, max_y))
 
             plot_day_summary_ohlc(ax, ohlc[begin:end])
+            plt.xticks([dates[i]], rotation=0)
+            ax.add_patch(mask_h(plt, dates[i] - (30/(24*60)/2), dates[i] + (30/(24*60)/2), min_y, max_y, 'yellow', 1.0))
+            plot_day_summary_ohlc(ax, ohlc[begin:end])
+
             ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M:%S'))
 
             snapshots_count += 1
