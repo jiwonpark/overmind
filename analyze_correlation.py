@@ -21,8 +21,8 @@ required_lead = 100
 max_snapshots = 5
 snapshots_count = 0
 
-fig = plt.figure(figsize=(20, 7 * max_snapshots))
-gs_all = gridspec.GridSpec(max_snapshots, 1, figure=fig)
+fig = plt.figure(figsize=(20 * max_snapshots, 7))
+gs_all = gridspec.GridSpec(1, max_snapshots, figure=fig)
 
 dates = mdates.date2num([datetime.fromtimestamp(segment[i,0]) for i in range(segment.shape[0])])
 ohlc = [[dates[i], segment[i,1], segment[i,3], segment[i,4], segment[i,2]] for i in range(segment.shape[0])]
@@ -60,7 +60,7 @@ for i in range(segment.shape[0]):
             min_y = center - 5
             max_y = center + 5
 
-            ax = fig.add_subplot(gs_all[snapshots_count], ylim=(min_y, max_y))
+            ax = fig.add_subplot(gs_all[0, snapshots_count], ylim=(min_y, max_y))
 
             plot_day_summary_ohlc(ax, ohlc[begin:end])
             plt.xticks([dates[i]], rotation=0)
