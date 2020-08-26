@@ -19,8 +19,10 @@ required_lead = 100
 max_snapshots = 5
 snapshots_count = 0
 
-fig = plt.figure(figsize=(20 * max_snapshots, 7))
-gs_all = gridspec.GridSpec(1, max_snapshots, figure=fig)
+coins_count = 2
+
+fig = plt.figure(figsize=(20 * max_snapshots, 7 * coins_count))
+gs_all = gridspec.GridSpec(coins_count, max_snapshots, figure=fig)
 
 class Series:
     def __init__(self, segment):
@@ -48,8 +50,8 @@ class Series:
         open = self.segment[i,1]
         close = self.segment[i,2]
         center = (open + close) / 2
-        min_y = center - 5
-        max_y = center + 5
+        min_y = center / 1.05
+        max_y = center * 1.05
 
         plt.xticks([self.dates[i]], rotation=0)
         ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M:%S'))
@@ -73,6 +75,8 @@ def get_candle(segment, i):
     movement_percent = (close / open - 1) * 100
     return (ts, open, close, high, low, volume, movement_percent)
 
+segment = retrieve_polo('USDT_BTC', 30, '2020-08-10', '2020-08-16') # 요구된 봉 데이터를 Poloniex 거래소 API로 읽어와서 n x 6 크기의 numpy array로 만들어주는 함수
+btc = Series(segment)
 segment = retrieve_polo('USDT_LTC', 30, '2020-08-10', '2020-08-16') # 요구된 봉 데이터를 Poloniex 거래소 API로 읽어와서 n x 6 크기의 numpy array로 만들어주는 함수
 ltc = Series(segment)
 
@@ -85,6 +89,9 @@ for i in range(segment.shape[0]):
         if snapshots_count < max_snapshots:
 
             ax = fig.add_subplot(gs_all[0, snapshots_count])
+            btc.draw(ax, i)
+
+            ax = fig.add_subplot(gs_all[1, snapshots_count])
             ltc.draw(ax, i)
 
             snapshots_count += 1
