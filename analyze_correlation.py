@@ -9,20 +9,27 @@ import pandas as pd
 from loader import retrieve_polo
 from datetime import datetime
 
+import time
+
 def mask_h(plt, x1, x2, min_y, max_y, color, alpha):
     return plt.Rectangle((x1, min_y), x2 - x1, max_y - min_y, linewidth=0, alpha=alpha, edgecolor=color, facecolor=color)
 
-purge_percent_threshold = 1
+purge_percent_threshold = 2
 
 required_lead = 100
 
-max_snapshots = 5
+max_snapshots = 10
 snapshots_count = 0
 
 coins_count = 2
 
 fig = plt.figure(figsize=(20 * max_snapshots, 7 * coins_count))
 gs_all = gridspec.GridSpec(coins_count, max_snapshots, figure=fig)
+
+def condition_step_up(segment, i):
+    n = 1
+    m = 20
+    return min(segment[i+1:i+1+m,4]) / max(segment[i-n:i,3]) > purge_percent_threshold
 
 class Series:
     def __init__(self, segment):
@@ -44,6 +51,11 @@ class Series:
         print(self.ema15.describe())
 
     def draw(self, ax, i):
+        tic = time.perf_counter()
+
+        span_minutes = (self.segment[1,0] - self.segment[0,0]) / 60
+        print(span_minutes)
+
         begin = i - required_lead
         end = i + 50
 
@@ -57,13 +69,16 @@ class Series:
         ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M:%S'))
         ax.set_ylim(bottom = min_y, top = max_y)
 
-        ax.add_patch(mask_h(plt, self.dates[i] - (30/(24*60)/2), self.dates[i] + (30/(24*60)/2), min_y, max_y, 'yellow', 1.0))
+        ax.add_patch(mask_h(plt, self.dates[i] - (span_minutes/(24*60)/2), self.dates[i] + (span_minutes/(24*60)/2), min_y, max_y, 'yellow', 1.0))
 
         plot_day_summary_ohlc(ax, self.ohlc[begin:end])
 
         ax.plot(self.hsma40[self.dates[begin]:self.dates[end]], color = 'blue', linewidth = 2, label='High, 40-Day SMA')
         ax.plot(self.lsma40[self.dates[begin]:self.dates[end]], color = 'blue', linewidth = 2, label='Low, 40-Day SMA')
         ax.plot(self.ema15[self.dates[begin]:self.dates[end]], color = 'red', linestyle='--', linewidth = 2, label='Close, 15-Day EMA')
+
+        toc = time.perf_counter()
+        print('{:.3f} ms'.format((toc - tic) * 1000))
 
 def get_candle(segment, i):
     ts = segment[i,0]
