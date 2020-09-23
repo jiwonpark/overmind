@@ -22,10 +22,10 @@ required_lead = 200
 required_tail = 100
 
 max_snapshots = 10
-snapshots_count = 0
 
 coins_count = 2
 
+snapshots_count = 0
 fig = plt.figure(figsize=(20 * max_snapshots, 7 * coins_count))
 gs_all = gridspec.GridSpec(coins_count, max_snapshots, figure=fig)
 
@@ -107,7 +107,7 @@ def load_poloniex_candles_from_csv(polo_pair, candle_minutes):
 
     a = np.genfromtxt('poloniex.{}.{}.csv'.format(polo_pair, period), delimiter=",")
 
-    print(a.shape)
+    # print(a.shape)
 
     max_unit = 24 * 60 * 60
     if a[0,0] % max_unit != 0:
@@ -146,9 +146,9 @@ def get_distance(segment1, segment2):
     return diff_sum_of_squares
 
 def test_correlation():
-    segment = retrieve_polo('USDT_BTC', 30, '2020-08-10', '2020-08-16') # 요구된 봉 데이터를 Poloniex 거래소 API로 읽어와서 n x 6 크기의 numpy array로 만들어주는 함수
+    segment = retrieve_polo('USDT_BTC', 30, '2020-08-10', '2020-08-16') # 요구된 봉 데이터를 Poloniex 거래소 API로 읽어와서 n x 6 크기의 numpy array로 만들어주는 함수
     btc = Series(segment)
-    segment = retrieve_polo('USDT_LTC', 30, '2020-08-10', '2020-08-16') # 요구된 봉 데이터를 Poloniex 거래소 API로 읽어와서 n x 6 크기의 numpy array로 만들어주는 함수
+    segment = retrieve_polo('USDT_LTC', 30, '2020-08-10', '2020-08-16') # 요구된 봉 데이터를 Poloniex 거래소 API로 읽어와서 n x 6 크기의 numpy array로 만들어주는 함수
     ltc = Series(segment)
 
     for i in range(segment.shape[0]):
@@ -174,7 +174,7 @@ def test_correlation():
 def test_simularity():
     global snapshots_count
 
-    # segment = retrieve_polo('USDT_LTC', 30, '2018-01-10', '2020-09-15') # 요구된 봉 데이터를 Poloniex 거래소 API로 읽어와서 n x 6 크기의 numpy array로 만들어주는 함수
+    # segment = retrieve_polo('USDT_LTC', 30, '2018-01-10', '2020-09-15') # 요구된 봉 데이터를 Poloniex 거래소 API로 읽어와서 n x 6 크기의 numpy array로 만들어주는 함수
 
     segment = load_poloniex_candles_from_csv('USDT_LTC', 30)
 
@@ -235,11 +235,75 @@ def test_simularity():
 
             last_timestamp = segment[i,0]
 
-test_simularity()
+from sklearn.cluster import KMeans
+import sys
 
-print('INDEX   TIMESTAMP            OPEN    CLOSE   HIGH    LOW     VOLUME      MOVE')
+def get_clusters(segment, x, y, c):
+    n = segment.shape[0]
+    r = n - x
 
-print('Rendering...')
-fig.savefig("analyze_correlation.png", bbox_inches='tight', dpi=100)
-plt.close(fig)
-print('done')
+    samples = np.empty((r, x * 4))
+    for i in range(r):
+        subsegment = standardize(segment[i:i+x,:])
+        for j in range(x):
+            samples[i, j * 4 + 0] = subsegment[j, 0]
+            samples[i, j * 4 + 1] = subsegment[j, 1]
+            samples[i, j * 4 + 2] = subsegment[j, 2]
+            samples[i, j * 4 + 3] = subsegment[j, 3]
+
+    clustering = KMeans(n_clusters=c, n_init=10, random_state=1)
+    clustering.fit(samples)
+    
+    np.set_printoptions(threshold=sys.maxsize)
+    # print(clustering.labels_)
+    print(clustering.labels_.shape)
+
+    return clustering
+
+def find_common_permutations(segment, clustering, c):
+    global snapshots_count
+
+    n = segment.shape[0]
+    r = n - x
+
+    # Remove consecutive duplicates
+    duplicates = np.full(r, False)
+    last_cluster = -1
+    for i in range(r):
+        if last_cluster == clustering.labels_[i]:
+            duplicates[i] = True
+        else:
+            last_cluster = clustering.labels_[i]
+
+    # Count each permutation
+    max_x = None
+    max_y = None
+    max_count = 0
+    permutations = np.zeros((c,c))
+    for i in range(r-y):
+        if not duplicates[i]:
+            x_cluster = clustering.labels_[i]
+            y_cluster = clustering.labels_[i+x]
+            permutations[x_cluster, y_cluster] += 1
+            count = permutations[x_cluster, y_cluster]
+            if max_count < count:
+                max_count = count
+                max_x = x_cluster
+                max_y = y_cluster
+    sum = 0
+    for i in range(c):
+        for j in range(c):
+            sum += permutations[i,j]
+    print(sum)
+    print(pd.DataFrame(permutations))
+    print(max_x, max_y, max_count)
+
+    ltc = Series(segment)
+
+    # Sneak peek
+    for i in range(r-y):
+        if not duplicates[i] and clustering.labels_[i] == max_x and clustering.labels_[i+x] == max_y:
+            if snapshots_count < max_snapshots:
+                ax = fig.add_subplot(gs_all[0, snapshots_count])
+                ltc.draw(ax, i)
+                snapshots_count += 1
