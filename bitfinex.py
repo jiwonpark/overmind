@@ -207,7 +207,7 @@ def update_tradable_balance():
 #     log(res.content)
     data = json.loads(res.content)
     for item in data:
-        log(item[1], item[2])
+#         log(item[1], item[2])
         tb[item[1]] = min(float(item[2][2]), float(item[2][3]))
 
 
@@ -880,8 +880,11 @@ config.trade_margin_ratio = 1
 
 # await run(config, None, tester2)
 
-loop = asyncio.get_event_loop()
-loop.run_until_complete(main(config, None, tester2))
-loop.close()
+from common import running_in_notebook
+
+if not running_in_notebook():
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main(config, None, tester2))
+    loop.close()
 
 # In[ ]:
