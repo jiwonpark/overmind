@@ -206,10 +206,11 @@ loop = asyncio.get_event_loop()
 loop.create_task(arbiter.start())
 
 #%%
-# await arbiter.plot(5)
-loop.run_until_complete(arbiter.plot(5))
+from common import running_in_notebook
+
+if not running_in_notebook():
+    # await arbiter.plot(5)
+    loop.run_until_complete(arbiter.plot(5))
+    loop.close()
 
 #%%
-
-
-
