@@ -111,36 +111,100 @@ class Bitfinex:
                 print(e)
             time.sleep(30)
 
+import requests
+import pytz
+from datetime import datetime
+
+def ft(unix_timetamp_in_ms):
+    return str(datetime.fromtimestamp(unix_timetamp_in_ms / 1000, tz=pytz.utc))
+
+
+import traceback
+import sys
+
 class Upbit:
 
     def __init__(self):
-        self.ub_orderbook_history = np.empty((0, 3))
-        self.ub_ticker_history = np.empty((0, 2))
+        self.ub_orderbook_history = {}
+        self.ub_ticker_history = {}
+        self.symbols = []
         self.snapshot = None
 
+        r = requests.get('https://api.upbit.com/v1/market/all')
+        pairs = json.loads(r.content.decode('utf-8'))
+        # print(pairs)
+
+        for it in pairs:
+            self.symbols.append(it['market'])
+            symbol = it['market'].split('-')
+            x = symbol[1]
+            y = symbol[0]
+            if x not in self.ub_orderbook_history:
+                self.ub_orderbook_history[x] = {}
+            if x not in self.ub_ticker_history:
+                self.ub_ticker_history[x] = {}
+            if y not in self.ub_orderbook_history[x]:
+                self.ub_orderbook_history[x][y] = np.empty((0, 3))
+            if y not in self.ub_ticker_history[x]:
+                self.ub_ticker_history[x][y] = np.empty((0, 2))
+    
+    def check_transitive_arbitrage(self, snapshot, min_make_ratio, max_time_diff_seconds, x, y, z):
+        # print(x, y1, y2)
+        if y in self.ub_orderbook_history and z in self.ub_orderbook_history[y] and self.ub_orderbook_history[y][z].shape[0] > 0 and z in self.ub_orderbook_history[x] and self.ub_orderbook_history[x][z].shape[0] > 0:
+            y_z = self.ub_orderbook_history[y][z][-1]
+            x_z = self.ub_orderbook_history[x][z][-1]
+            a = (y_z[1] * snapshot['bp']) / x_z[2]
+            b = x_z[1] / (snapshot['ap'] * y_z[2])
+            c = snapshot['ap'] / snapshot['bp']
+            t1 = snapshot['ts'] - y_z[0]
+            t2 = snapshot['ts'] - x_z[0]
+            if t1 < max_time_diff_seconds and t2 < max_time_diff_seconds:
+                if a > min_make_ratio:
+                    print('{}\t{}\t{}\t{}\t{:.4f}\t{:.4f}\t{:.4f}\t{:.2f}\t{:.2f}'.format(ft(snapshot['ts'] * 1000), x, y, z, a, b, c, t1, t2))
+                elif b > min_make_ratio:
+                    print('{}\t{}\t{}\t{}\t{:.4f}\t{:.4f}\t{:.4f}\t{:.2f}\t{:.2f}'.format(ft(snapshot['ts'] * 1000), x, y, z, a, b, c, t1, t2))
+        # elif y1 == 'USDT' and y2 in self.ub_orderbook_history[x] and self.ub_orderbook_history[x][y2].shape[0] > 0:
+        #     fx = 1111
+        #     y1_y2 = [0, fx, fx]
+        #     x_y2 = self.ub_orderbook_history[x]['KRW'][-1]
+        #     a = (snapshot['bp'] * y1_y2[1]) / x_y2[2]
+        #     b = x_y2[1] / (snapshot['ap'] * y1_y2[2])
+        #     c = snapshot['ap'] / snapshot['bp']
+        #     if a > min_make_ratio or b > min_make_ratio:
+        #         print('{}\t{}\t{}\t{:.4f}\t{:.4f}\t{:.4f}'.format(x, y1, y2, a, b, c))
+
     async def producer_ub(self):
+        print(self.symbols)
         while True:
             ws_ub = await websockets.connect('wss://api.upbit.com/websocket/v1')
-            await ws_ub.send(json.dumps([ { "ticket" : "test" } ,{"format":"SIMPLE"}, {"type":"orderbook", "codes" : ["KRW-LTC"]}, { "type" : "ticker", "codes" : ["KRW-LTC"] } ]))
+            await ws_ub.send(json.dumps([ { "ticket" : "test" } ,{"format":"SIMPLE"}, {"type":"orderbook", "codes" : self.symbols}, { "type" : "ticker", "codes" : self.symbols } ]))
             try:
                 while 1:
                     data = json.loads(await ws_ub.recv())
                     # print(data)
-                    if data['ty'] == 'ticker' and data['cd'] == 'KRW-LTC':
-                        self.ub_ticker_history = np.append(self.ub_ticker_history, [[time.time(), data['tp']]], axis=0)
+                    symbol = data['cd'].split('-')
+                    x = symbol[1]
+                    y = symbol[0]
+                    if data['ty'] == 'ticker':
+                        now = time.time()
+                        self.ub_ticker_history[x][y] = np.append(self.ub_ticker_history[x][y], [[now, data['tp']]], axis=0)
                         # print('ub', data['tp'])
                         # {'ty': 'ticker', 'cd': 'KRW-LTC', 'op': 107300.0, 'hp': 107650.0, 'lp': 100000.0, 'tp': 101000.0, 'pcp': 107200.0, 'atp': 1570438236.214195, 'c': 'FALL', 'cp': 6200.0, 'scp': -6200.0, 'cr': 0.0578358209, 'scr': -0.0578358209, 'ab': 'ASK', 'tv': 17.24103294, 'atv': 15105.92397352, 'tdt': '20190809', 'ttm': '171327', 'ttms': 1565370807000, 'aav': 7523.65477131, 'abv': 7582.26920221, 'h52wp': 173000.0, 'h52wdt': '2019-06-12', 'l52wp': 25040.0, 'l52wdt': '2018-12-07', 'ts': None, 'ms': 'ACTIVE', 'msfi': None, 'its': False, 'dd': None, 'mw': 'NONE', 'tms': 1565370807605, 'atp24h': 1926291918.7091465, 'atv24h': 18411.92718214, 'st': 'SNAPSHOT'}
-                    elif data['ty'] == 'orderbook' and data['cd'] == 'KRW-LTC':
+                    elif data['ty'] == 'orderbook':
                         snapshot = {}
                         snapshot['ts'] = data['tms'] / 1000
                         snapshot['ts_'] = time.time()
                         snapshot['bp'] = data['obu'][0]['bp']
                         snapshot['ap'] = data['obu'][0]['ap']
-                        # print('ub:', snapshot)
-                        self.ub_orderbook_history = np.append(self.ub_orderbook_history, [[snapshot['ts'], snapshot['bp'], snapshot['ap']]], axis=0)
+                        # print('ub:', symbol, snapshot)
+                        self.ub_orderbook_history[x][y] = np.append(self.ub_orderbook_history[x][y], [[snapshot['ts'], snapshot['bp'], snapshot['ap']]], axis=0)
                         self.snapshot = snapshot
+                        if snapshot['bp'] > 0:
+                            self.check_transitive_arbitrage(snapshot, 1.0035, 0.3, x, y, 'KRW')
+
             except Exception as e:
-                print(e)
+                traceback.print_exc()
+                sys.exit()
             time.sleep(30)
 
 import time
@@ -201,16 +265,16 @@ class Arbiter:
             #     plt.plot(ub_ticker_history[:,0], ub_ticker_history[:,1] / 1185, color='black')
             #     plt.show()
 
-arbiter = Arbiter()
-loop = asyncio.get_event_loop()
-loop.create_task(arbiter.start())
 
 #%%
 from common import running_in_notebook
 
 if not running_in_notebook():
-    # await arbiter.plot(5)
+    arbiter = Arbiter()
+    loop = asyncio.get_event_loop()
+    loop.create_task(arbiter.start())
     loop.run_until_complete(arbiter.plot(5))
     loop.close()
+    # await arbiter.plot(5)
 
 #%%
