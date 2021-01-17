@@ -22,13 +22,13 @@ secret_key = obj['upbit'][1]
 
 # In[ ]:
 
+# from common import running_in_notebook
+# if running_in_notebook():
+#     get_ipython().run_line_magic('run', './botson.ipynb')
+# else:
+#     from botson import notify_admin
 
-from common import running_in_notebook
-if running_in_notebook():
-    get_ipython().run_line_magic('run', './botson.ipynb')
-else:
-    from botson import notify_admin
-
+from botson import notify_admin
 
 # In[ ]:
 
@@ -153,23 +153,23 @@ def post_limit_order(symbol, volume, price):
         side = 'bid'
     else:
         side = 'ask'
-    price = '%f' % ceil_to_n_sigdits(price, 4)
-#     log('order param', mos, price)
+    # price = '%f' % ceil_to_n_sigdits(price, 4)
+    log('order param', symbol, '{:.20f}'.format(volume), price)
     query = {
         'market': symbol,
         'side': side,
-        'volume': abs(volume),
-        'price': str(price),
+        'volume': '{:.20f}'.format(abs(volume)),
+        'price': price,
         'ord_type': 'limit',
     }
     query_string = urlencode(query).encode()
     return upbit_post("/v1/orders", query, query_string)
 
-def post_market_buy_order(symbol, amount_in_krw):
+def post_market_buy_order(symbol, amount_in_base_currency):
     query = {
         'market': symbol,
         'side': 'bid',
-        'price': '%f' % amount_in_krw,
+        'price': '%f' % amount_in_base_currency,
         'ord_type': 'price',
     }
     query_string = urlencode(query).encode()
@@ -231,12 +231,26 @@ def get_order(uuid):
 
 # In[ ]:
 
+def get_free_balances2():
+    free_balances = {}
+
+    data = get_balances()
+    # log(data)
+    for it in data:
+#         log(it)
+#         log(it['currency'], it['balance'], it['avg_buy_price'], it['unit_currency'])
+        symbol = it['currency']
+        amount = float(it['balance'])
+        price = float(it['avg_buy_price'])
+        free_balances[symbol] = { 'amount': amount, 'price': price }
+    
+    return free_balances
 
 def get_free_balances():
     free_balances = {}
 
     data = get_balances()
-#     log(data)
+    # log(data)
     for it in data:
 #         log(it)
 #         log(it['currency'], it['balance'], it['avg_buy_price'], it['unit_currency'])
@@ -407,20 +421,29 @@ async def wait_order_fulfillment(order_id):
     while True:
         await asyncio.sleep(1)
         data = get_order(order_id)
-        if data['remaining_volume'] is None or float(data['remaining_volume']) == 0:
-            break
+        if data['remaining_volume'] is None:
+            assert data['side'] == 'bid'
+            assert data['ord_type'] == 'price'
+            if float(data['executed_volume']) > 0:
+                break
+        else:
+            if float(data['remaining_volume']) == 0:
+                break
         log(data)
-#         log(data['price'], data['remaining_volume'], data['executed_volume'])
+    log(data['price'], data['remaining_volume'], data['executed_volume'])
+    log(data)
+    return data
 
 async def market_buy(pair, investment_amount_in_krw):
     data = post_market_buy_order(pair, investment_amount_in_krw)
-    log(data)
+    # log(data)
     if 'error' in data:
+        log(data)
         return None
     order_id = data['uuid']
-    await wait_order_fulfillment(order_id)
+    data = await wait_order_fulfillment(order_id)
     log('MARKET BUY FULFILLED!')
-    return order_id
+    return data
 
 async def market_sell(pair, amount):
     data = post_market_sell_order(pair, amount)
@@ -560,13 +583,20 @@ async def trailing_oco(pair, balance, c):
 # average_price = get_average_price(order)
 # log(average_price)
 
-async def start_quickie(pair):
+from helper import *
+
+async def start_quickie(pair, amount_krw, target_profit_ratio):
     free_balances = get_free_balances()
-    log(free_balances)
-    if pair in free_balances:
-        log('Position already exists!')
-        return False
-    await market_buy(pair, 2000)
+    # log(free_balances)
+    # if pair in free_balances:
+    #     log('Position already exists!')
+    #     return False
+    order = await market_buy(pair, amount_krw)
+    average_price = get_average_price(order)
+    log(order['executed_volume'], average_price)
+    order = post_limit_order(pair, -float(order['executed_volume']), round_up_to_unit(average_price * target_profit_ratio, get_upbit_krw_price_unit))
+    log('order', order)
+    order_id = order['uuid']
     return True
 
 # class Config():

@@ -7,6 +7,10 @@ import numpy as np
 import websockets
 import json
 
+from common import log
+
+from botson import notify_admin
+
 class Bitfinex:
 
     def __init__(self):
@@ -113,14 +117,20 @@ class Bitfinex:
 
 import requests
 import pytz
-from datetime import datetime
+import datetime
 
 def ft(unix_timetamp_in_ms):
-    return str(datetime.fromtimestamp(unix_timetamp_in_ms / 1000, tz=pytz.utc))
+    KST = datetime.timezone(datetime.timedelta(hours=9))
+    return str(datetime.datetime.fromtimestamp(unix_timetamp_in_ms / 1000, tz=KST))
 
 
 import traceback
 import sys
+
+from upbit import post_limit_order
+from upbit import wait_order_fulfillment
+from upbit import get_free_balances2
+from upbit import start_quickie
 
 class Upbit:
 
@@ -129,6 +139,13 @@ class Upbit:
         self.ub_ticker_history = {}
         self.symbols = []
         self.snapshot = None
+        self.min_trade_amount = {
+            'KRW': 500,
+            'BTC': 0.0005,
+            'USDT': 0.0005
+        }
+        self.free_balances = None
+        self.free_balances_timestamp = None
 
         r = requests.get('https://api.upbit.com/v1/market/all')
         pairs = json.loads(r.content.decode('utf-8'))
@@ -148,7 +165,7 @@ class Upbit:
             if y not in self.ub_ticker_history[x]:
                 self.ub_ticker_history[x][y] = np.empty((0, 2))
     
-    def check_transitive_arbitrage(self, snapshot, min_make_ratio, max_time_diff_seconds, x, y, z):
+    async def check_transitive_arbitrage(self, snapshot, min_make_ratio, max_time_diff_seconds, x, y, z, z_amount):
         # print(x, y1, y2)
         if y in self.ub_orderbook_history and z in self.ub_orderbook_history[y] and self.ub_orderbook_history[y][z].shape[0] > 0 and z in self.ub_orderbook_history[x] and self.ub_orderbook_history[x][z].shape[0] > 0:
             y_z = self.ub_orderbook_history[y][z][-1]
@@ -160,9 +177,36 @@ class Upbit:
             t2 = snapshot['ts'] - x_z[0]
             if t1 < max_time_diff_seconds and t2 < max_time_diff_seconds:
                 if a > min_make_ratio:
+                    # await start_quickie('KRW-BTC', 10000, 1.002)
                     print('{}\t{}\t{}\t{}\t{:.4f}\t{:.4f}\t{:.4f}\t{:.2f}\t{:.2f}'.format(ft(snapshot['ts'] * 1000), x, y, z, a, b, c, t1, t2))
+                    x_amount = z_amount / x_z[2]
+                    y_amount = x_amount * snapshot['bp']
+                    if self.free_balances is not None and self.free_balances[z]['amount'] > z_amount * 1.01 and self.free_balances[y]['amount'] > y_amount * 1.01:
+                    # if True:
+                        order = post_limit_order(z + '-' + x, x_amount, x_z[2])
+                        log(order)
+                        log(post_limit_order(z + '-' + y, -y_amount, y_z[1]))
+                        order = await wait_order_fulfillment(order['uuid'])
+                        log('{} {}'.format(x_amount, order['executed_volume']))
+                        log(post_limit_order(y + '-' + x, -float(order['executed_volume']), snapshot['bp']))
+                        self.free_balances = None
                 elif b > min_make_ratio:
                     print('{}\t{}\t{}\t{}\t{:.4f}\t{:.4f}\t{:.4f}\t{:.2f}\t{:.2f}'.format(ft(snapshot['ts'] * 1000), x, y, z, a, b, c, t1, t2))
+                    y_amount = z_amount / y_z[2]
+                    x_amount = y_amount / snapshot['ap']
+                    if self.free_balances is not None and self.free_balances[z]['amount'] > z_amount * 1.01 and self.free_balances[y]['amount'] > y_amount * 1.01:
+                    # if False:
+                        order = post_limit_order(y + '-' + x, x_amount, snapshot['ap'])
+                        log(order)
+                        log(post_limit_order(z + '-' + y, y_amount, y_z[2]))
+                        order = await wait_order_fulfillment(order['uuid'])
+                        log('{} {}'.format(x_amount, order['executed_volume']))
+                        log(post_limit_order(z + '-' + x, -float(order['executed_volume']), x_z[1]))
+                        self.free_balances = None
+            now = time.time()
+            if self.free_balances is None or now - self.free_balances_timestamp > 10:
+                self.free_balances = get_free_balances2()
+                self.free_balances_timestamp = now
         # elif y1 == 'USDT' and y2 in self.ub_orderbook_history[x] and self.ub_orderbook_history[x][y2].shape[0] > 0:
         #     fx = 1111
         #     y1_y2 = [0, fx, fx]
@@ -200,11 +244,13 @@ class Upbit:
                         self.ub_orderbook_history[x][y] = np.append(self.ub_orderbook_history[x][y], [[snapshot['ts'], snapshot['bp'], snapshot['ap']]], axis=0)
                         self.snapshot = snapshot
                         if snapshot['bp'] > 0:
-                            self.check_transitive_arbitrage(snapshot, 1.0035, 0.3, x, y, 'KRW')
-
-            except Exception as e:
-                traceback.print_exc()
-                sys.exit()
+                            await self.check_transitive_arbitrage(snapshot, 1.0035, 0.3, x, y, 'KRW', 20000)
+            except websockets.exceptions.ConnectionClosedError as e:
+                log(repr(e))
+                notify_admin(repr(e))
+            # except Exception as e:
+            #     traceback.print_exc()
+            #     sys.exit()
             time.sleep(30)
 
 import time
