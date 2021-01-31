@@ -43,6 +43,12 @@ def ff(x):
     else:
         return '{:.3f}'.format(x)
 
+import datetime
+
+def ft(unix_timetamp_in_ms):
+    KST = datetime.timezone(datetime.timedelta(hours=9))
+    return str(datetime.datetime.fromtimestamp(unix_timetamp_in_ms / 1000, tz=KST))
+
 import time
 
 
@@ -173,19 +179,25 @@ from data_manager import DataManager
 
 import ssl
 import websockets
+import yaml
 
 import hmac, hashlib
 
 from time import sleep
+
+reposition_price_ratio = 1.004
+reposition_amount_ratio = 0.5
+# reposition_amount_ratio = 1 / reposition_amount_ratio
 
 class Bitfinex:
     mos = {}
     mos_last_update_time = 0
     tb = {}
     stop_and_limit_price_pairs = {}
-    positions = {}
+    positions = None
     orders = None
     pending_order_request = {}
+    dm = None
 
     def __init__(self):
         pass
@@ -194,7 +206,7 @@ class Bitfinex:
         now = time.time() 
         if now - self.mos_last_update_time < 60:
             return True
-        mos_last_update_time = now
+        self.mos_last_update_time = now
         res = get('/v1/symbols_details')
         data = json.loads(res.content)
         if 'error' in data:
@@ -209,10 +221,11 @@ class Bitfinex:
 
     def update_tradable_balance(self):
         res = post2('/v2/auth/r/info/margin/sym_all', {})
+        log(res.content)
         # log(res.content)
         data = json.loads(res.content)
         for item in data:
-            # log(item[1], item[2])
+            log(item)
             self.tb[item[1]] = min(float(item[2][2]), float(item[2][3]))
 
     def query_orders(self, symbol, direction, type = None, gid = None):
@@ -436,12 +449,12 @@ class Bitfinex:
             if symbol in self.positions:
                 del self.positions[symbol]
                 log('Deleted position for', symbol)
-        else:
+        elif position[7] is not None:
             if symbol in self.positions and self.positions[symbol]['amount'] * position[2] < 0: # Abnormal state: opposite direction amount
                 del self.positions[symbol]
             if symbol not in self.positions:
                 self.positions[symbol] = {}
-                self.positions[symbol]['time'] = time.time()
+            self.positions[symbol]['time'] = time.time()
             self.positions[symbol]['amount'] = position[2]
             self.positions[symbol]['price'] = position[3]
             self.positions[symbol]['pl'] = position[6]
@@ -456,6 +469,8 @@ class Bitfinex:
         # await cancel_all_for_volatility_breakthrough_orders(symbol)
 
     async def on_positions(self, data):
+        if self.positions is None:
+            self.positions = {}
         log(data[2])
         # if self.positions is None:
         #     self.positions = {}
@@ -464,16 +479,19 @@ class Bitfinex:
             log('Previous data:', symbol, position)
         for position in data[2]:
             symbol = position[0]
-            if symbol in self.positions and self.positions[symbol]['amount'] == position[2] and self.positions[symbol]['price'] == position[3]:
-                self.positions[symbol]['check'] = True
+            if position[2] == 0:
+                if symbol in self.positions:
+                    del self.positions[symbol]
+                    log('Deleted position for', symbol)
             else:
                 self.positions[symbol] = {'amount': position[2], 'price': position[3], 'pl': position[6], 'plp': position[7], 'time': time.time(), 'check': True, 'peak_amount': position[2]}
-            # await websocket.send(json.dumps({'event': 'subscribe', 'channel': 'ticker', 'symbol': position[0]}))
-            # await normalize_liquidations(websocket, symbol)
-            # await cancel_all_for_volatility_breakthrough_orders(symbol)
+                # await websocket.send(json.dumps({'event': 'subscribe', 'channel': 'ticker', 'symbol': position[0]}))
+                # await normalize_liquidations(websocket, symbol)
+                # await cancel_all_for_volatility_breakthrough_orders(symbol)
         self.positions = { symbol:position for symbol, position in self.positions.items() if position['check'] is True }    
         for symbol, position in self.positions.items():
             log('Checked data:', symbol, position)
+            notify_admin('{} {} {}'.format(symbol, position['amount'], position['price']))
 
     async def on_orders(self, data):
         # for order in data[2]:
@@ -530,7 +548,7 @@ class Bitfinex:
             log('pending_order_request:', self.pending_order_request)
             if self.pending_order_request[symbol] == 0:
                 notify_admin('New order(s) for {} complete!'.format(symbol))
-                await self.process_stop_and_limit_price_pairs(symbol)
+                # await self.process_stop_and_limit_price_pairs(symbol)
 
     async def on_update_order(self, data):
         log('flowcheck', data)
@@ -564,14 +582,19 @@ class Bitfinex:
         #         await place_trailing_stop_order(websocket, symbol, -position_amount, price * 0.01)
         if order[13] == 'CANCELED':
             if order[28] == 'API>BFX':
-                assert symbol in self.pending_order_request
-                self.pending_order_request[symbol] -= 1
-                log('Order canceled - self.pending_order_request:', self.pending_order_request[symbol])
+                # assert symbol in self.pending_order_request
+                # self.pending_order_request[symbol] -= 1
+                # log('Order canceled - pending_order_request:', self.pending_order_request[symbol])
+                pass
         else:
             # if order_type != 'TRAILING STOP':
-            if group_id != 999 and group_id != 9999:
-                await self.create_liquidation(symbol, price, original_amount)
+            # if group_id != 999 and group_id != 9999:
+            #     await self.create_liquidation(symbol, price, original_amount)
             notify_admin('Order fulfilled: {} {} {} {}'.format(group_id, symbol, original_amount, price))
+        if original_amount > 0:
+            await self.place_limit_order(symbol, -original_amount * reposition_amount_ratio, price * reposition_price_ratio, False, None)
+        else:
+            await self.place_limit_order(symbol, -original_amount * reposition_amount_ratio, price / reposition_price_ratio, False, None)
 
     async def on_ticker(self, data):
         log(data)
@@ -634,9 +657,9 @@ class Bitfinex:
             cfg = configuration
         
         if data_manager is None:
-            dm = DataManager(cfg.symbols_of_interest, cfg.candles_of_interest)
+            self.dm = DataManager(cfg.symbols_of_interest, cfg.candles_of_interest)
         else:
-            dm = data_manager
+            self.dm = data_manager
         
         append_only = actor is None
 
@@ -659,7 +682,7 @@ class Bitfinex:
             self.ws = websocket
             await websocket.send(payload)
     #         await websocket.send(json.dumps({ 'event': 'subscribe', 'channel': 'bu' }))
-            await dm.subscribe(websocket)
+            await self.dm.subscribe(websocket)
 
     #         await websocket.send(json.dumps([
     #                 0,
@@ -727,12 +750,18 @@ class Bitfinex:
                     elif data[1] == 'hb':
                         None
                     elif data[0] > 0:
-                        result = await dm.on_candles(data, append_only)
-                        if result[0]:
-                            if not append_only:
-                                assert actor is not None
-                                if self.update_mos():
-                                    await actor(self, dm, result[1], result[2])
+                        result = await self.dm.on_candles(data, append_only)
+                        if self.positions is not None:
+                            if self.orders is not None:
+                                if result[0]:
+                                    if not append_only:
+                                        assert actor is not None
+                                        if self.update_mos():
+                                            await actor(self, self.dm, result[1], result[2])
+                            else:
+                                notify_admin('Orders not yet received!')
+                        else:
+                            notify_admin('Positions not yet received!')
                     elif data[1] == 'n':
                         # 06/13/2019 06:14:41 PM run: [0, 'n', [1560417281153, 'on-req', None, None, [None, 0, 1234522267, 'tLTCUSD', None, None, -0.6081493395007104, None, 'STOP', None, None, None, None, None, None, None, 130.99514563106794, None, 0, 0, None, None, None, 0, None, None, None, None, None, None, None, None], None, 'ERROR', 'Invalid order: not enough tradable balance for -0.6081493395007104 LTCUSD at 130.99514563106794']]
                         log(data)
@@ -752,7 +781,7 @@ class Bitfinex:
                             None
                         elif data['event'] == 'subscribed':
                             if data['channel'] == 'candles':
-                                dm.on_subscribed(data)
+                                self.dm.on_subscribed(data)
                             elif data['channel'] == 'ticker':
                                 log('Subscribed to ticker:', data['symbol'], data['chanId'])
                             else:
@@ -765,8 +794,9 @@ class Bitfinex:
 
     def reset_bf_state(self):
         self.ws = None
-        for symbol, position in self.positions.items():
-            position['check'] = False
+        if self.positions is not None:
+            for symbol, position in self.positions.items():
+                position['check'] = False
         self.orders = None
         self.pending_order_request = {}
 
@@ -779,10 +809,27 @@ async def main(cfg, data_manager, actor):
         bitfinex.reset_bf_state()
         try:
             await bitfinex.run(cfg, data_manager, actor)
-        # except Exception as e:
+        # except IndexError as e:
+        #     log(repr(e))
+        #     notify_admin(repr(e))
         except websockets.exceptions.ConnectionClosedError as e:
             log(repr(e))
             notify_admin(repr(e))
+        except websockets.exceptions.ConnectionClosedOK as e:
+            log(repr(e))
+            notify_admin(repr(e))
+        # except Exception as e:
+        #     log(repr(e))
+        #     notify_admin(repr(e))
+        # except websockets.exceptions.IncompleteReadError as e:
+        #     log(repr(e))
+        #     notify_admin(repr(e))
+        # except websockets.exceptions.ConnectionResetError as e:
+        #     log(repr(e))
+        #     notify_admin(repr(e))
+        # except websockets.exceptions.CancelledError as e:
+        #     log(repr(e))
+        #     notify_admin(repr(e))
         sleep(30)
 
 # In[ ]:
@@ -805,10 +852,60 @@ async def tester2(bf, dm, symbol, candle_type):
     # if not pending_order_request_exists(symbol):
     #     await aim_for_volatility_breakthrough(symbol, 54, 58, 0, 0, 0, 0)
 
+def get_order_average(symbol, orders, position, type, same_direction):
+    amount = 0
+    product_sum = 0
+    for order_id, order in orders.items():
+        # log('{} {}'.format(order_id, yaml.dump(order)))
+        if order['type'] == type and (order['amount'] * position['amount'] > 0 if same_direction else order['amount'] * position['amount'] < 0):
+            amount += order['amount']
+            product_sum += order['price'] * order['amount']
+    if amount != 0:
+        log('{} {} {}: {:.8f} {:.2f}'.format(symbol, type, 'dilution' if same_direction else 'liquidation', amount, product_sum / amount))
+        return amount, product_sum / amount
+    else:
+        return 0, 0
+
+from helper import get_required_price_for_dilution_target
+
+min_profit_ratio = 1.005
+distance_ratio = 1.05
+
+async def tester3(bf, dm, symbol, candle_type):
+    log('hey')
+    # if dm is not None:
+    #     log(yaml.dump(dm.candles['tLTCUSD']['5m'][-1]))
+    bf.update_tradable_balance()
+    segment = dm.get_segment(symbol, candle_type)
+    last = segment[-1, 2]
+    now = time.time()
+    if symbol in bf.positions:
+        position = bf.positions[symbol]
+        profit_ratio = position['plp'] / 100 + 1
+        profit_ratio2 = last / position['price']
+        # log(yaml.dump(segment[-1]))
+        # log('{} {:.5f} {:.3f} {:.3f} {:.3f} {:.3f} {:.0f} {} {}'.format(symbol, position['amount'], position['price'], price, profit_ratio, profit_ratio2, now - position['time'], ft(now * 1000), ft(position['time'] * 1000)))
+        position_last_update_seconds = now - position['time']
+        current_candle_age_seconds = now - segment[-1, 0] / 1000
+        log('{} {:.2f} ({:.5f}) | {:.2f} {:.2f} | {:.3f} | {:.0f} {:.0f}'.format(symbol, position['amount'] * position['price'], position['amount'], position['price'], last, profit_ratio2, position_last_update_seconds, current_candle_age_seconds))
+        if current_candle_age_seconds < 10:
+            notify_admin('{} {:.2f} ({:.5f}) | {:.2f} {:.2f} | {:.3f} | {:.0f} {:.0f}'.format(symbol, position['amount'] * position['price'], position['amount'], position['price'], last, profit_ratio2, position_last_update_seconds, current_candle_age_seconds))
+        if symbol in bf.orders:
+            amount, price = get_order_average(symbol, bf.orders[symbol], position, 'LIMIT', False)
+            amount, price = get_order_average(symbol, bf.orders[symbol], position, 'STOP', False)
+            if position['amount'] > 0 and -amount < position['amount']:
+                additional_amount = -position['amount'] - amount
+                if additional_amount != 0:
+                    min_profit_price = position['price'] * min_profit_ratio
+                    additional_price = get_required_price_for_dilution_target(price, amount, min_profit_price, additional_amount)
+                    log('{} {:.2f} {:.2f} ({:.5f})'.format(symbol, min_profit_price, additional_price, additional_amount))
+                    if additional_price != 0:
+                        if last / additional_price > distance_ratio:
+                            await bf.place_stop_order(symbol, additional_amount, additional_price, True, None)
 class Config():
     pass
 config = Config()
-config.symbols_of_interest = ['tLTCUSD']
+config.symbols_of_interest = ['tBTCUSD', 'tETHUSD', 'tLTCUSD', 'tDOTUSD']
 # config.candles_of_interest = ['1m', '15m', '1h']
 config.candles_of_interest = ['5m']
 config.trade_margin_ratio = 1
@@ -819,7 +916,7 @@ from common import running_in_notebook
 
 if not running_in_notebook():
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(main(config, None, tester2))
+    loop.run_until_complete(main(config, None, tester3))
     loop.close()
 
 # In[ ]:

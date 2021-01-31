@@ -56,3 +56,15 @@ assert round_down_to_unit(1999001, get_upbit_krw_price_unit) == 1999000
 assert round_down_to_unit(1999000, get_upbit_krw_price_unit) == 1999000
 assert round_down_to_unit(9.999, get_upbit_krw_price_unit) == 9.99
 assert round_down_to_unit(9.99, get_upbit_krw_price_unit) == 9.99
+
+def get_required_price_for_dilution_target(current_price, current_amount, target_price, dilution_amount):
+    assert dilution_amount != 0
+    assert dilution_amount * current_amount >= 0
+    return (target_price - current_price) * (current_amount / dilution_amount) + target_price
+
+assert get_required_price_for_dilution_target(100, 100, 100, 100) == 100
+assert get_required_price_for_dilution_target(100, 100, 101, 100) == 102
+assert get_required_price_for_dilution_target(100, 100, 101, 50) == 103
+
+assert get_required_price_for_dilution_target(100, -100, 100, -100) == 100
+assert get_required_price_for_dilution_target(100, -100, 99, -100) == 98
