@@ -22,7 +22,7 @@ symbol = None
 
 import json
 
-file = open('/Users/jiwon/keys/keys.json',mode='r')
+file = open('./keys.json',mode='r')
 all_of_it = file.read()
 file.close()
 obj = json.loads(all_of_it)
@@ -185,9 +185,12 @@ import hmac, hashlib
 
 from time import sleep
 
-reposition_price_ratio = 1.004
-reposition_amount_ratio = 0.5
-# reposition_amount_ratio = 1 / reposition_amount_ratio
+import math
+
+partial_reposition_amount_ratio = 0.5
+partial_reposition_price_ratio = 1.01
+
+from helper import get_skim_amount
 
 class Bitfinex:
     mos = {}
@@ -221,25 +224,31 @@ class Bitfinex:
 
     def update_tradable_balance(self):
         res = post2('/v2/auth/r/info/margin/sym_all', {})
-        log(res.content)
-        # log(res.content)
+        log(res.content) # ["error",10100,"apikey: invalid"]
         data = json.loads(res.content)
+        if data[0] == "error":
+            notify_admin(res.content)
+            return
         for item in data:
-            log(item)
+            # log(item)
             self.tb[item[1]] = min(float(item[2][2]), float(item[2][3]))
 
     def query_orders(self, symbol, direction, type = None, gid = None):
         assert self.orders is not None
+        if symbol not in self.orders:
+            return []
         result = []
         # for order_id in self.orders[symbol]:
         #     order = self.orders[symbol][order_id]
         for order_id, order in self.orders[symbol].items():
+            # log(order)
             if type is not None and order['type'] != type:
                 continue
-            if gid is not None and (order['gid'] is None or order['gid'] % 1000 != gid):
-                continue
+            if gid is not None:
+                if gid == 0 and order['gid'] is not None or gid != 0 and (order['gid'] is None or order['gid'] % 1000 != gid):
+                    continue
             if direction > 0 and order['amount'] > 0 or direction < 0 and order['amount'] < 0:
-                log(order)
+                # log(order)
                 result.append(order)
         return result
 
@@ -287,21 +296,22 @@ class Bitfinex:
             self.pending_order_request[symbol] += 1
         else:
             self.pending_order_request[symbol] = 1
+        order = {
+            "cid": 1234522267,
+            "type": "STOP",
+            "symbol": symbol,
+            "amount": str(amount),
+            "price": str(price),
+            "flags": 1024 if reduce_only else 0
+        }
+        if group_id is not None:
+            order["gid"] = group_id
         await self.ws.send(json.dumps([
             0,
             "on",
             0,
-            {
-                "gid": group_id if group_id is not None else 0,
-                "cid": 1234522267,
-                "type": "STOP",
-                "symbol": symbol,
-                "amount": str(amount),
-                "price": str(price),
-                "flags": 1024 if reduce_only else 0
-            }
-            ]
-        ))
+            order,
+        ]))
 
     async def place_limit_order(self, symbol, amount, price, reduce_only, group_id):
         log('flowcheck', symbol, amount, price, group_id)
@@ -310,21 +320,22 @@ class Bitfinex:
             self.pending_order_request[symbol] += 1
         else:
             self.pending_order_request[symbol] = 1
+        order = {
+            "cid": 1234522267,
+            "type": "LIMIT",
+            "symbol": symbol,
+            "amount": str(amount),
+            "price": str(price),
+            "flags": 1024 if reduce_only else 0
+        }
+        if group_id is not None:
+            order["gid"] = group_id
         await self.ws.send(json.dumps([
             0,
             "on",
             0,
-            {
-                "gid": group_id if group_id is not None else 0,
-                "cid": 1234522267,
-                "type": "LIMIT",
-                "symbol": symbol,
-                "amount": str(amount),
-                "price": str(price),
-                "flags": 1024 if reduce_only else 0
-            }
-            ]
-        ))
+            order
+        ]))
         log('pending_order_request:', self.pending_order_request)
 
     async def prorder(self, symbol, amount, limit_stop_price, limit_price, timeout, group_id):
@@ -334,35 +345,39 @@ class Bitfinex:
             self.pending_order_request[symbol] += 2
         else:
             self.pending_order_request[symbol] = 2
+
+        order = {
+            "cid": 1234522267,
+            "type": "STOP LIMIT",
+            "symbol": symbol,
+            "amount": str(-amount),
+            "price": str(limit_stop_price),
+            "price_aux_limit": str(limit_price)
+        }
+        if group_id is not None:
+            order["gid"] = group_id
         await self.ws.send(json.dumps([
             0,
             "on",
             0,
-            {
-                "gid": group_id if group_id is not None else 0,
-                "cid": 1234522267,
-                "type": "STOP LIMIT",
-                "symbol": symbol,
-                "amount": str(-amount),
-                "price": str(limit_stop_price),
-                "price_aux_limit": str(limit_price)
-            }
-            ]
-        ))
+            order
+        ]))
+
+        order = {
+            "cid": 1234522267,
+            "type": "LIMIT",
+            "symbol": symbol,
+            "amount": str(amount),
+            "price": str(limit_stop_price)
+        }
+        if group_id is not None:
+            order["gid"] = group_id
         await self.ws.send(json.dumps([
             0,
             "on",
             0,
-            {
-                "gid": group_id if group_id is not None else 0,
-                "cid": 1234522267,
-                "type": "LIMIT",
-                "symbol": symbol,
-                "amount": str(amount),
-                "price": str(limit_stop_price)
-            }
-            ]
-        ))
+            order
+        ]))
         log('pending_order_request:', self.pending_order_request)
 
     async def place_oco_order(self, symbol, amount, limit_price, stop_price, reduce_only, group_id):
@@ -378,22 +393,23 @@ class Bitfinex:
             self.pending_order_request[symbol] += 2
         else:
             self.pending_order_request[symbol] = 2
+        order = {
+            "cid": 1234522267,
+            "type": "LIMIT",
+            "symbol": symbol,
+            "amount": str(amount),
+            "price": str(limit_price),
+            "price_oco_stop": str(stop_price),
+            "flags": 16384
+        }
+        if group_id is not None:
+            order["gid"] = group_id
         await self.ws.send(json.dumps([
             0,
             "on",
             0,
-            {
-                "gid": group_id if group_id is not None else 0,
-                "cid": 1234522267,
-                "type": "LIMIT",
-                "symbol": symbol,
-                "amount": str(amount),
-                "price": str(limit_price),
-                "price_oco_stop": str(stop_price),
-                "flags": 16384
-            }
-            ]
-        ))
+            order
+        ]))
 
     async def update_order_price(self, order, price):
         log('flowcheck', order, price)
@@ -410,8 +426,7 @@ class Bitfinex:
                 "id": order['id'],
                 "price": str(price)
             }
-            ]
-        ))
+        ]))
 
     async def update_order_amount(self, order_id, new_amount):
         log('flowcheck', order_id, new_amount)
@@ -423,8 +438,7 @@ class Bitfinex:
                 "id": order_id,
                 "amount": str(new_amount)
             }
-            ]
-        ))
+        ]))
     
     async def cancel_order(self, order_id):
         # if symbol in self.pending_order_request:
@@ -439,12 +453,12 @@ class Bitfinex:
             {
                 "id": order_id,
             }
-            ]
-        ))
+        ]))
 
     async def on_position_update(self, data):
         position = data[2]
         symbol = position[0]
+        # notify_admin(json.dumps(position))
         if position[2] == 0:
             if symbol in self.positions:
                 del self.positions[symbol]
@@ -459,7 +473,7 @@ class Bitfinex:
             self.positions[symbol]['price'] = position[3]
             self.positions[symbol]['pl'] = position[6]
             self.positions[symbol]['plp'] = position[7]
-            self.positions[symbol]['check'] = True
+            self.positions[symbol]['dirty'] = False
             if 'peak_amount' not in self.positions[symbol] or self.positions[symbol]['peak_amount'] > 0 and self.positions[symbol]['peak_amount'] < position[2] or self.positions[symbol]['peak_amount'] < 0 and self.positions[symbol]['peak_amount'] > position[2]:
                 self.positions[symbol]['peak_amount'] = position[2]
                 log('Updated position peak amount ', self.positions[symbol])
@@ -472,10 +486,11 @@ class Bitfinex:
         if self.positions is None:
             self.positions = {}
         log(data[2])
+        # notify_admin(json.dumps(data[2]))
         # if self.positions is None:
         #     self.positions = {}
         for symbol, position in self.positions.items():
-            position['check'] = False
+            position['dirty'] = True
             log('Previous data:', symbol, position)
         for position in data[2]:
             symbol = position[0]
@@ -483,12 +498,12 @@ class Bitfinex:
                 if symbol in self.positions:
                     del self.positions[symbol]
                     log('Deleted position for', symbol)
-            else:
-                self.positions[symbol] = {'amount': position[2], 'price': position[3], 'pl': position[6], 'plp': position[7], 'time': time.time(), 'check': True, 'peak_amount': position[2]}
-                # await websocket.send(json.dumps({'event': 'subscribe', 'channel': 'ticker', 'symbol': position[0]}))
-                # await normalize_liquidations(websocket, symbol)
-                # await cancel_all_for_volatility_breakthrough_orders(symbol)
-        self.positions = { symbol:position for symbol, position in self.positions.items() if position['check'] is True }    
+            self.positions[symbol] = {'amount': position[2], 'price': position[3], 'pl': position[6], 'plp': position[7], 'time': time.time(), 'dirty': False, 'peak_amount': position[2]}
+            notify_admin(json.dumps(self.positions[symbol]))
+            # await websocket.send(json.dumps({'event': 'subscribe', 'channel': 'ticker', 'symbol': position[0]}))
+            # await normalize_liquidations(websocket, symbol)
+            # await cancel_all_for_volatility_breakthrough_orders(symbol)
+        self.positions = { symbol:position for symbol, position in self.positions.items() if not position['dirty'] }    
         for symbol, position in self.positions.items():
             log('Checked data:', symbol, position)
             notify_admin('{} {} {}'.format(symbol, position['amount'], position['price']))
@@ -591,10 +606,13 @@ class Bitfinex:
             # if group_id != 999 and group_id != 9999:
             #     await self.create_liquidation(symbol, price, original_amount)
             notify_admin('Order fulfilled: {} {} {} {}'.format(group_id, symbol, original_amount, price))
-        if original_amount > 0:
-            await self.place_limit_order(symbol, -original_amount * reposition_amount_ratio, price * reposition_price_ratio, False, None)
-        else:
-            await self.place_limit_order(symbol, -original_amount * reposition_amount_ratio, price / reposition_price_ratio, False, None)
+            if symbol in self.positions:
+                self.positions[symbol]['dirty'] = True
+        # # TODO: position directionality
+        # if original_amount > 0:
+        #     await self.place_limit_order(symbol, -original_amount * partial_reposition_amount_ratio, price * partial_reposition_price_ratio, False, None)
+        # else:
+        #     await self.place_limit_order(symbol, -original_amount, price / partial_reposition_price_ratio, False, None)
 
     async def on_ticker(self, data):
         log(data)
@@ -608,16 +626,18 @@ class Bitfinex:
         for order_id in self.orders[symbol]:
             order = self.orders[symbol][order_id]
             log('order:', order)
-            if order['gid'] == group_id:
-                log(i)
-                if (long and order['amount'] > 0) or (short and order['amount'] < 0):
-                    i += 1
-                    r = post('/v1/order/cancel', {'order_id': order_id})
-                    log(r)
-                    if symbol in self.pending_order_request:
-                        self.pending_order_request[symbol] += 1
-                    else:
-                        self.pending_order_request[symbol] = 1
+            if group_id is not None:
+                if group_id != 0 and order['gid'] % 1000 != group_id if group_id == 0 else order['gid'] is not None:
+                    continue
+            log(i)
+            if (long and order['amount'] > 0) or (short and order['amount'] < 0):
+                i += 1
+                r = post('/v1/order/cancel', {'order_id': order_id})
+                log(r)
+                if symbol in self.pending_order_request:
+                    self.pending_order_request[symbol] += 1
+                else:
+                    self.pending_order_request[symbol] = 1
 
     async def place_stop_limit_orders(self, group_id, symbol, amount, ppps):
         assert amount != 0
@@ -751,17 +771,24 @@ class Bitfinex:
                         None
                     elif data[0] > 0:
                         result = await self.dm.on_candles(data, append_only)
-                        if self.positions is not None:
-                            if self.orders is not None:
-                                if result[0]:
-                                    if not append_only:
-                                        assert actor is not None
-                                        if self.update_mos():
-                                            await actor(self, self.dm, result[1], result[2])
+                        if result[0]:
+                            symbol = result[1]
+                            if self.positions is not None:
+                                if self.orders is not None:
+                                    # if symbol not in self.positions or not self.positions[symbol]['dirty']:
+                                    if True:
+                                        if not append_only:
+                                            assert actor is not None
+                                            if self.update_mos():
+                                                await actor(self, self.dm, result[1], result[2])
+                                    else:
+                                        notify_admin('{} position data dirty!'.format(symbol))
+                                else:
+                                    notify_admin('Orders not yet received!')
                             else:
-                                notify_admin('Orders not yet received!')
+                                notify_admin('Positions not yet received!')
                         else:
-                            notify_admin('Positions not yet received!')
+                            log(result)
                     elif data[1] == 'n':
                         # 06/13/2019 06:14:41 PM run: [0, 'n', [1560417281153, 'on-req', None, None, [None, 0, 1234522267, 'tLTCUSD', None, None, -0.6081493395007104, None, 'STOP', None, None, None, None, None, None, None, 130.99514563106794, None, 0, 0, None, None, None, 0, None, None, None, None, None, None, None, None], None, 'ERROR', 'Invalid order: not enough tradable balance for -0.6081493395007104 LTCUSD at 130.99514563106794']]
                         log(data)
@@ -770,7 +797,7 @@ class Bitfinex:
                             assert failed_order_symbol in self.pending_order_request
                             self.pending_order_request[failed_order_symbol] -= 1
                             log('Handle order fail:', self.pending_order_request[failed_order_symbol])
-                            notify_admin('Order failed!')
+                            notify_admin(json.dumps(data))
                     else:
                         log(data)
                 else:
@@ -796,9 +823,83 @@ class Bitfinex:
         self.ws = None
         if self.positions is not None:
             for symbol, position in self.positions.items():
-                position['check'] = False
+                position['dirty'] = True
         self.orders = None
         self.pending_order_request = {}
+
+    def get_order_average(self, symbol, position, type, same_direction, group_id):
+        amount = 0
+        product_sum = 0
+        if symbol not in self.orders:
+            return 0, 0
+        orders = self.orders[symbol]
+        for order_id, order in orders.items():
+            # log('{} {}'.format(order_id, yaml.dump(order)))
+            if order['type'] == type and (order['amount'] * position['amount'] > 0 if same_direction else order['amount'] * position['amount'] < 0) and (group_id is None or order['gid'] == group_id):
+                amount += order['amount']
+                product_sum += order['price'] * order['amount']
+        if amount != 0:
+            log('{} {} {}: {:.8f} {:.2f}'.format(symbol, type, 'dilution' if same_direction else 'liquidation', amount, product_sum / amount))
+            return amount, product_sum / amount
+        else:
+            return 0, 0
+
+    # async def lay_out_smart_sell_orders(self, symbol, amount, max_price, min_price):
+    #     unit_amount = self.mos[symbol]
+    #     # unit_amount = 50 / max_price
+    #     # count = math.floor(amount / self.mos[symbol])
+    #     # notify_admin('{:.5f} {:.5f} {} {:.7f}'.format(amount, unit_amount, count, amount % (count * unit_amount)))
+    #     count = 100
+    #     decrement_amount = amount / count
+    #     notify_admin('{:.7f} {:.7f} {} {:.7f}'.format(amount, unit_amount, count, decrement_amount))
+    #     price_step = (max_price - min_price + 1) / count
+    #     for i in range(count):
+    #         stop_price = max_price - i * price_step
+    #         await self.place_stop_order(symbol, -(unit_amount + decrement_amount), stop_price, False, 111)
+    #         await self.place_limit_order(symbol, unit_amount, stop_price / 1.005, False, 111)
+
+    async def lay_out_smart_sell_orders(self, symbol, amount, max_price, min_price, d, max_deflation_ratio, max_count):
+        assert self.positions is not None
+        assert symbol in self.positions
+        assert self.positions[symbol]['amount'] > 0
+        a0 = self.positions[symbol]['amount']
+        a1 = self.mos[symbol]
+        pr = max_price - min_price
+        epr = max_price - max_price / d
+        count = ((a0 * max_deflation_ratio) * pr / epr - amount) / a1
+        count = math.floor(min(max_count, count))
+        if count < 1:
+            return
+        a2 = amount / count
+        exposed_amount = (a1 + a2) * (epr / pr * count)
+        assert exposed_amount <= a0 * max_deflation_ratio
+        p1 = max_price
+        notify_admin('{} {} {} {} {} {} {} {}'.format(a0, a1, a2, max_price, min_price, pr, epr, count))
+        for i in range(count):
+            p2 = p1 / d
+            await self.place_stop_order(symbol, -(a1 + a2), p1, False, 111)
+            await self.place_limit_order(symbol, a1, p2, False, 111)
+            # log(a1 + a2, a1, p1, p2)
+            p1 -= pr / count
+
+    async def lay_out_smart_buy_orders(self, symbol, min_price, max_price, d, max_inflation_ratio, k):
+        assert self.positions is not None
+        assert symbol in self.positions
+        assert self.positions[symbol]['amount'] > 0
+        a0 = self.positions[symbol]['amount']
+        a1 = self.mos[symbol]
+        p0 = self.positions[symbol]['price']
+        p1 = min_price
+        if p1 <= p0:
+            return
+        while p1 < max_price:
+            p2 = p1 * d
+            # print(p0, p1, p2)
+            a2 = get_skim_amount(p0, p1, p2, a0, a1) * k ** math.log10((p2 - p0) / p0 * 100)
+            await self.place_stop_order(symbol, a1 + a2, p1, False, 222)
+            await self.place_limit_order(symbol, -a1, p2, False, 222)
+            # log(a1 + a2, a1, p1, p2)
+            p1 = p1 * ((d - 1) / ((a0 * max_inflation_ratio) / (a1 + a2)) + 1)
 
 import asyncio
 
@@ -831,92 +932,3 @@ async def main(cfg, data_manager, actor):
         #     log(repr(e))
         #     notify_admin(repr(e))
         sleep(30)
-
-# In[ ]:
-
-import sys
-
-async def tester1(bf, dm, symbol, candle_type):
-    log('hey')
-    bf.update_tradable_balance()
-    # segment = dm.get_segment(symbol, candle_type)
-    # price = segment[-1, 2]
-    await bf.cancel_orders(111, symbol, False, True)
-    # price = 57
-    # await place_stop_limit_orders(ws, 888, symbol, tb[symbol] / price, price, 1.01, 1.02, 1.005, 10)
-    # sys.exit()
-
-async def tester2(bf, dm, symbol, candle_type):
-    log('hey')
-    bf.update_tradable_balance()
-    # if not pending_order_request_exists(symbol):
-    #     await aim_for_volatility_breakthrough(symbol, 54, 58, 0, 0, 0, 0)
-
-def get_order_average(symbol, orders, position, type, same_direction):
-    amount = 0
-    product_sum = 0
-    for order_id, order in orders.items():
-        # log('{} {}'.format(order_id, yaml.dump(order)))
-        if order['type'] == type and (order['amount'] * position['amount'] > 0 if same_direction else order['amount'] * position['amount'] < 0):
-            amount += order['amount']
-            product_sum += order['price'] * order['amount']
-    if amount != 0:
-        log('{} {} {}: {:.8f} {:.2f}'.format(symbol, type, 'dilution' if same_direction else 'liquidation', amount, product_sum / amount))
-        return amount, product_sum / amount
-    else:
-        return 0, 0
-
-from helper import get_required_price_for_dilution_target
-
-min_profit_ratio = 1.005
-distance_ratio = 1.05
-
-async def tester3(bf, dm, symbol, candle_type):
-    log('hey')
-    # if dm is not None:
-    #     log(yaml.dump(dm.candles['tLTCUSD']['5m'][-1]))
-    bf.update_tradable_balance()
-    segment = dm.get_segment(symbol, candle_type)
-    last = segment[-1, 2]
-    now = time.time()
-    if symbol in bf.positions:
-        position = bf.positions[symbol]
-        profit_ratio = position['plp'] / 100 + 1
-        profit_ratio2 = last / position['price']
-        # log(yaml.dump(segment[-1]))
-        # log('{} {:.5f} {:.3f} {:.3f} {:.3f} {:.3f} {:.0f} {} {}'.format(symbol, position['amount'], position['price'], price, profit_ratio, profit_ratio2, now - position['time'], ft(now * 1000), ft(position['time'] * 1000)))
-        position_last_update_seconds = now - position['time']
-        current_candle_age_seconds = now - segment[-1, 0] / 1000
-        log('{} {:.2f} ({:.5f}) | {:.2f} {:.2f} | {:.3f} | {:.0f} {:.0f}'.format(symbol, position['amount'] * position['price'], position['amount'], position['price'], last, profit_ratio2, position_last_update_seconds, current_candle_age_seconds))
-        if current_candle_age_seconds < 10:
-            notify_admin('{} {:.2f} ({:.5f}) | {:.2f} {:.2f} | {:.3f} | {:.0f} {:.0f}'.format(symbol, position['amount'] * position['price'], position['amount'], position['price'], last, profit_ratio2, position_last_update_seconds, current_candle_age_seconds))
-        if symbol in bf.orders:
-            amount, price = get_order_average(symbol, bf.orders[symbol], position, 'LIMIT', False)
-            amount, price = get_order_average(symbol, bf.orders[symbol], position, 'STOP', False)
-            if position['amount'] > 0 and -amount < position['amount']:
-                additional_amount = -position['amount'] - amount
-                if additional_amount != 0:
-                    min_profit_price = position['price'] * min_profit_ratio
-                    additional_price = get_required_price_for_dilution_target(price, amount, min_profit_price, additional_amount)
-                    log('{} {:.2f} {:.2f} ({:.5f})'.format(symbol, min_profit_price, additional_price, additional_amount))
-                    if additional_price != 0:
-                        if last / additional_price > distance_ratio:
-                            await bf.place_stop_order(symbol, additional_amount, additional_price, True, None)
-class Config():
-    pass
-config = Config()
-config.symbols_of_interest = ['tBTCUSD', 'tETHUSD', 'tLTCUSD', 'tDOTUSD']
-# config.candles_of_interest = ['1m', '15m', '1h']
-config.candles_of_interest = ['5m']
-config.trade_margin_ratio = 1
-
-# await run(config, None, tester2)
-
-from common import running_in_notebook
-
-if not running_in_notebook():
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(main(config, None, tester3))
-    loop.close()
-
-# In[ ]:

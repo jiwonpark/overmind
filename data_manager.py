@@ -132,6 +132,17 @@ class DataManager:
         candle_type = self.candles_reverse_index[chanId].split(':')[1]
         interval = get_milliseconds(candle_type)
         symbol = self.candles_reverse_index[chanId].split(':')[2]
+        if len(data[1]) == 0:
+            log(symbol + ' not cool')
+            log(symbol + ' not cool')
+            log(symbol + ' not cool')
+            log(symbol + ' not cool')
+            log(symbol + ' not cool')
+            log(symbol + ' not cool')
+            log(symbol + ' not cool')
+            log(symbol + ' not cool')
+            log(symbol + ' not cool')
+            return [False]
         if isinstance(data[1][0], list):
             data[1].reverse()
             self.candles[symbol][candle_type] = data[1]
@@ -141,27 +152,26 @@ class DataManager:
             self.update_analyses(symbol, candle_type, 0)
             return [True, symbol, candle_type]
         elif data[1][0] == self.candles[symbol][candle_type][-2][0]:
-#             log('Redundant candle for', self.candles_reverse_index[chanId])
+            log('Redundant candle for {} {}'.format(self.candles_reverse_index[chanId], dt_format(self.candles[symbol][candle_type][-2][0] / 1000)))
             assert self.candles[symbol][candle_type][-2][5] == data[1][5]
             return [False]
         elif data[1][0] == self.candles[symbol][candle_type][-1][0]:
-#             log('Updating last candle for', self.candles_reverse_index[chanId])
-#             log(self.candles[symbol][candle_type][-1])
-#             log(data[1])
+            log('Updating last candle for {} {}'.format(self.candles_reverse_index[chanId], dt_format(self.candles[symbol][candle_type][-1][0] / 1000)))
+            log(self.candles[symbol][candle_type][-1])
+            log(data[1])
             self.candles[symbol][candle_type][-1] = data[1]
             self.update_analyses(symbol, candle_type, len(self.candles[symbol][candle_type]) - 1)
             return [True, symbol, candle_type]
         else:
-            log('Appending new candle for', self.candles_reverse_index[chanId])
-            log(self.candles[symbol][candle_type][-2])
-            log(self.candles[symbol][candle_type][-1])
-            log(data[1])
+            log('Appending new candle for {} {}'.format(self.candles_reverse_index[chanId], dt_format(self.candles[symbol][candle_type][-1][0] / 1000)))
+            log(dt_format(self.candles[symbol][candle_type][-2][0] / 1000))
+            log(dt_format(self.candles[symbol][candle_type][-1][0] / 1000))
+            log(dt_format(data[1][0] / 1000))
             log((data[1][0] - self.candles[symbol][candle_type][-1][0]) / (60 * 1000))
             log((self.candles[symbol][candle_type][-1][0] - self.candles[symbol][candle_type][-2][0]) / (60 * 1000))
             log(interval)
-#             assert data[1][0] - self.candles[symbol][candle_type][-1][0] == interval
-#             assert data[1][0] > self.candles[symbol][candle_type][-1][0]
-#             assert data[1][0] - self.candles[symbol][candle_type][-1][0] == self.candles[symbol][candle_type][-1][0] - self.candles[symbol][candle_type][-2][0]
+            # assert data[1][0] - self.candles[symbol][candle_type][-1][0] == interval
+            # assert data[1][0] - self.candles[symbol][candle_type][-1][0] == self.candles[symbol][candle_type][-1][0] - self.candles[symbol][candle_type][-2][0]
             self.candles[symbol][candle_type].append(data[1])
             guarantee_integrity(self.candles[symbol][candle_type], interval, True)
             check_integrity(self.candles[symbol][candle_type], interval)

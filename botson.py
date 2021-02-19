@@ -50,7 +50,7 @@ async def _send_photo(id):
 
 async def _send(id, text):
     async with aiohttp.ClientSession() as session:
-        async with session.get('https://api.telegram.org/bot{}/sendMessage?chat_id={}&text={}'.format(botson_key, id, urllib.parse.quote(text))) as res:
+        async with session.get('https://api.telegram.org/bot{}/sendMessage?chat_id={}&parse_mode=Markdown&text={}'.format(botson_key, id, urllib.parse.quote(text))) as res:
             data = await res.text()
             body = json.loads(data)
             log(body)

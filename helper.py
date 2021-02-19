@@ -68,3 +68,39 @@ assert get_required_price_for_dilution_target(100, 100, 101, 50) == 103
 
 assert get_required_price_for_dilution_target(100, -100, 100, -100) == 100
 assert get_required_price_for_dilution_target(100, -100, 99, -100) == 98
+
+def get_bf_orders_min_max_price(orders):
+    assert len(orders) > 0
+    min = 0
+    max = 0
+    for order in orders:
+        if min == 0 or order['price'] < min:
+            min = order['price']
+        if max == 0 or order['price'] > max:
+            max = order['price']
+    return min, max
+
+stop_fee = 0.0025
+limit_fee = 0.001
+
+def get_skim_amount(p0, p1, p2, a0, a1):
+    if p1 < p0:
+        return 0
+    u = stop_fee * p1
+    v = limit_fee * p2
+    r0 = p2 - p0
+    r1 = p2 - p1
+    return a1 * (r1 - u - v) / (r0 - r1 + u)
+
+print(get_skim_amount(100, 110, 110 * 1.0025, 1, 0.01))
+print(get_skim_amount(100, 110, 110 * 1.0035, 1, 0.01))
+print(get_skim_amount(100, 110, 110 * (1 + stop_fee) * (1 + limit_fee), 1, 0.01))
+
+
+print(get_skim_amount(100, 110, 110 * 1.01, 1, 0.01))
+print(get_skim_amount(100, 110, 110 * 1.1, 1, 0.01))
+print(get_skim_amount(100, 110, 110 * 1.01, 1, 0.1))
+print(get_skim_amount(100, 110, 110 * 1.1, 1, 0.1))
+print(get_skim_amount(100, 110, 110 * 1.01, 1, 1))
+print(get_skim_amount(100, 110, 110 * 1.1, 1, 1))
+
