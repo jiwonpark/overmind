@@ -2,8 +2,8 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import matplotlib.ticker as ticker
 import matplotlib.dates as mdates
-from mpl_finance import plot_day_summary_ohlc
-from mpl_finance import candlestick2_ohlc
+from mplfinance.original_flavor import plot_day_summary_ohlc
+from mplfinance.original_flavor import candlestick2_ohlc
 
 import numpy as np
 import pandas as pd
@@ -18,8 +18,8 @@ def mask_h(plt, x1, x2, min_y, max_y, color, alpha):
 
 purge_percent_threshold = 3
 
-required_lead = 200
-required_tail = 100
+required_lead = 60
+required_tail = 20
 
 max_snapshots = 10
 
@@ -48,10 +48,12 @@ class Series:
         self.hsma40 = self.segment_pd['high'].rolling(40).mean()
         self.lsma40 = self.segment_pd['low'].rolling(40).mean()
         self.ema15 = self.segment_pd['close'].ewm(15).mean()
+        self.ema5 = self.segment_pd['close'].ewm(5).mean()
+        # self.ema60 = self.segment_pd['close'].ewm(60).mean()
 
-        print(self.hsma40.describe())
-        print(self.lsma40.describe())
-        print(self.ema15.describe())
+        # print(self.hsma40.describe())
+        # print(self.lsma40.describe())
+        # print(self.ema15.describe())
 
     def draw(self, ax, i):
         tic = time.perf_counter()
@@ -65,10 +67,10 @@ class Series:
         open = self.segment[i,1]
         close = self.segment[i,2]
         center = (open + close) / 2
-        # min_y = center / 1.05
-        # max_y = center * 1.05
-        min_y = min(self.segment[begin:i,4])
-        max_y = max(self.segment[begin:i,3])
+        min_y = center / 1.05
+        max_y = center * 1.05
+        # min_y = min(self.segment[begin:i,4])
+        # max_y = max(self.segment[begin:i,3])
 
         plt.xticks([self.dates[i]], rotation=0)
         ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d %H:%M:%S'))
@@ -78,9 +80,11 @@ class Series:
 
         plot_day_summary_ohlc(ax, self.ohlc[begin:end])
 
-        # ax.plot(self.hsma40[self.dates[begin]:self.dates[end]], color = 'blue', linewidth = 2, label='High, 40-Day SMA')
-        # ax.plot(self.lsma40[self.dates[begin]:self.dates[end]], color = 'blue', linewidth = 2, label='Low, 40-Day SMA')
-        # ax.plot(self.ema15[self.dates[begin]:self.dates[end]], color = 'red', linestyle='--', linewidth = 2, label='Close, 15-Day EMA')
+        ax.plot(self.hsma40[self.dates[begin]:self.dates[end]], color = 'blue', linewidth = 2, label='High, 40-Day SMA')
+        ax.plot(self.lsma40[self.dates[begin]:self.dates[end]], color = 'blue', linewidth = 2, label='Low, 40-Day SMA')
+        ax.plot(self.ema15[self.dates[begin]:self.dates[end]], color = 'red', linestyle='--', linewidth = 2, label='Close, 15-Day EMA')
+        ax.plot(self.ema5[self.dates[begin]:self.dates[end]], color = 'green', linestyle='--', linewidth = 2, label='Close, 5-Day EMA')
+        # ax.plot(self.ema60[self.dates[begin]:self.dates[end]], color = 'purple', linestyle='--', linewidth = 2, label='Close, 60-Day EMA')
 
         toc = time.perf_counter()
         print('{:.3f} ms'.format((toc - tic) * 1000))

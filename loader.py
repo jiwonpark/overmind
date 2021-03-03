@@ -4,7 +4,7 @@
 # In[ ]:
 
 
-# get_ipython().system('pip install websockets mpl_finance aiohttp pytz')
+# get_ipython().system('pip install websockets mplfinance aiohttp pytz')
 
 
 # In[ ]:
@@ -73,7 +73,7 @@ import json
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
-from mpl_finance import candlestick2_ohlc
+from mplfinance.original_flavor import candlestick2_ohlc
 
 from common import log
 

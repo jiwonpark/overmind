@@ -41,10 +41,6 @@ from urllib.parse import urlencode
 
 import requests
 
-# access_key = os.environ['UPBIT_OPEN_API_ACCESS_KEY']
-# secret_key = os.environ['UPBIT_OPEN_API_SECRET_KEY']
-# server_url = os.environ['UPBIT_OPEN_API_SERVER_URL']
-
 server_url = 'https://api.upbit.com'
 
 def upbit_get(api, query, query_string):
@@ -583,21 +579,6 @@ async def trailing_oco(pair, balance, c):
 # average_price = get_average_price(order)
 # log(average_price)
 
-from helper import *
-
-async def start_quickie(pair, amount_krw, target_profit_ratio):
-    free_balances = get_free_balances()
-    # log(free_balances)
-    # if pair in free_balances:
-    #     log('Position already exists!')
-    #     return False
-    order = await market_buy(pair, amount_krw)
-    average_price = get_average_price(order)
-    log(order['executed_volume'], average_price)
-    order = post_limit_order(pair, -float(order['executed_volume']), round_up_to_unit(average_price * target_profit_ratio, get_upbit_krw_price_unit))
-    log('order', order)
-    order_id = order['uuid']
-    return True
 
 # class Config():
 #     pass
