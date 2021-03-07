@@ -242,46 +242,46 @@ def get_free_balances2():
     
     return free_balances
 
-def get_free_balances():
-    free_balances = {}
+# def get_free_balances():
+#     free_balances = {}
 
-    data = get_balances()
-    # log(data)
-    for it in data:
-#         log(it)
-#         log(it['currency'], it['balance'], it['avg_buy_price'], it['unit_currency'])
-        if it['currency'] == 'KRW':
-            continue
-        symbol = it['unit_currency'] + '-' + it['currency']
-        amount = float(it['balance'])
-        price = float(it['avg_buy_price'])
-        free_balances[symbol] = { 'amount': amount, 'price': price }
+#     data = get_balances()
+#     # log(data)
+#     for it in data:
+# #         log(it)
+# #         log(it['currency'], it['balance'], it['avg_buy_price'], it['unit_currency'])
+#         if it['currency'] == 'KRW':
+#             continue
+#         symbol = it['unit_currency'] + '-' + it['currency']
+#         amount = float(it['balance'])
+#         price = float(it['avg_buy_price'])
+#         free_balances[symbol] = { 'amount': amount, 'price': price }
     
-    return free_balances
+#     return free_balances
 
-def get_total_balances():
-    total_balances = get_free_balances().copy()
+# def get_total_balances():
+#     total_balances = get_free_balances().copy()
 
-    data = upbeat_get_orders('wait')
-    for it in data:
-        if it['side'] != 'ask':
-            continue
-        symbol = it['market']
-        amount = total_balances[symbol]['amount'] + float(it['remaining_volume'])
-        total_balances[symbol] = {'amount': amount, 'price': total_balances[symbol]['price']}
+#     data = upbeat_get_orders('wait')
+#     for it in data:
+#         if it['side'] != 'ask':
+#             continue
+#         symbol = it['market']
+#         amount = total_balances[symbol]['amount'] + float(it['remaining_volume'])
+#         total_balances[symbol] = {'amount': amount, 'price': total_balances[symbol]['price']}
 
-    import math
+#     import math
 
-    for it in total_balances:
-        investment = total_balances[it]['amount'] * total_balances[it]['price']
-#         log(it, ':', total_balances[it], math.floor(investment))
-        data = get_order_chance(it)
-#         if 'error' not in data:
-#             log(it, ':', total_balances[it], math.floor(investment), data['market']['ask']['min_total'])
-#         else:
-#             log(it, ':', total_balances[it], math.floor(investment), data['error']['name'])
+#     for it in total_balances:
+#         investment = total_balances[it]['amount'] * total_balances[it]['price']
+# #         log(it, ':', total_balances[it], math.floor(investment))
+#         data = get_order_chance(it)
+# #         if 'error' not in data:
+# #             log(it, ':', total_balances[it], math.floor(investment), data['market']['ask']['min_total'])
+# #         else:
+# #             log(it, ':', total_balances[it], math.floor(investment), data['error']['name'])
     
-    return total_balances
+#     return total_balances
 
 # 'error' in data and data['error']['name'] == 'validation_error' and data['error']['message'] == 'market does not have a valid value'
 # 'error' in data and data['error']['name'] == 'under_min_total_ask' and data['error']['message'] == '최소주문금액 이상으로 주문해주세요'

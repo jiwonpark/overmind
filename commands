@@ -1,0 +1,6 @@
+alias cleanup="ps -ef | grep jupyter | grep vscode | grep -v grep | awk '{print $2}' | xargs -I {} kill {}"
+alias check="ps -ef | grep jupyter | grep -v grep"
+
+alias deploy-amber='(cd ../amber-release; ls *.py *.json | xargs -I {} cp ../overmind/{} .)'
+alias release-amber='(cd ../amber-release; zip -r ../amber-release.zip . -x '*.git*' -x '__pycache__*' -x keys.json)'
+
