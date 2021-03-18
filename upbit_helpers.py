@@ -111,8 +111,13 @@ def upbit_get(api, query, query_string):
     else:
         res = requests.get(server_url + api, params=query, headers=headers)
 
-    # print(res.status_code)
-    # print(res.headers['Remaining-Req'])
+    if res.status_code == 429:
+        time.sleep(10)
+        return upbit_get(api, query, query_string)
+
+    print(res.status_code)
+    print(res.headers)
+    print(res.headers['Remaining-Req'])
 
     return res.json()
 
@@ -324,6 +329,8 @@ def get_orders(state):
 
 # 상위 레벨 루틴들
 
+import asyncio
+
 def get_free_balances():
     free_balances = {}
 
@@ -341,9 +348,9 @@ def get_free_balances():
     
     return free_balances
 
-async def wait_order_fulfillment(order_id):
+async def wait_order_fulfillment(order_id, interval = 0.1):
     while True:
-        await time.sleep(1)
+        await asyncio.sleep(interval)
         data = get_order(order_id)
         if data['remaining_volume'] is None:
             assert data['side'] == 'bid'
@@ -470,7 +477,7 @@ async def start_quickie(pair, amount_krw, target_profit_ratios):
         a1 += a
     for i in range(len(orders)):
         order = orders[i]
-        data = await wait_order_fulfillment(order['uuid'])
+        data = await wait_order_fulfillment(order['uuid'], 2)
         target_sell_price = float(order['price'])
         average_sold_price = get_average_price(data)
         amount_sold = float(data['executed_volume'])
