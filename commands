@@ -6,3 +6,6 @@ alias release-amber='(cd ../amber-release; zip -r ../amber-release.zip . -x '*.g
 
 alias deploy-brandy='(cd ../brandy-release; ls *.py | xargs -I {} cp ../overmind/{} .)'
 alias release-brandy='(cd ../brandy-release; zip -r ../brandy-release.zip . -x '*.git*' -x '__pycache__/' -x '__pycache__/*' -x keys.json)'
+
+alias deploy-elsa='(cd ../elsa-release; ls *.py | xargs -I {} cp ../overmind/{} .)'
+alias release-elsa='(cd ../elsa-release; zip -r ../elsa-release.zip . -x '*.git*' -x '__pycache__/' -x '__pycache__/*' -x keys.json)'

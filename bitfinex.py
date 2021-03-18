@@ -893,6 +893,8 @@ class Bitfinex:
         if p1 <= p0:
             return
         while p1 < max_price:
+            if p0 < 0:
+                p0 = p1 / 100
             p2 = p1 * d
             # print(p0, p1, p2)
             a2 = get_skim_amount(p0, p1, p2, a0, a1) * k ** math.log10((p2 - p0) / p0 * 100)

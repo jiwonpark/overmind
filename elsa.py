@@ -124,17 +124,24 @@ async def tester(bf, dm, symbol, candle_type):
         tolerance = 1.0001
 
         stop_orders = None
+        dilution_orders = None
         limit_orders = None
         print('@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@')
         print(bf.orders)
         if symbol in bf.orders:
-            # stop_orders = bf.query_orders(symbol, -position['amount'], 'STOP', 0)
+            stop_orders = bf.query_orders(symbol, -position['amount'], 'STOP', 0)
             # limit_orders = bf.query_orders(symbol, -position['amount'], 'LIMIT', 111)
+            dilution_orders = bf.query_orders(symbol, position['amount'], 'STOP', 222)
             limit_orders = bf.query_orders(symbol, -position['amount'], 'LIMIT', 0)
         print('@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@')
         print(limit_orders)
         if position['amount'] > 0:
-            # eligible_for_stop = p0 / p1 > min_profit_ratio * min_stop_distance_ratio
+
+            if not exists(stop_orders) and p1 / p0 > min_profit_ratio * min_stop_distance_ratio:
+                await bf.place_stop_order(symbol, -a0 / 2, p0 * min_profit_ratio, True, None)
+            else:
+                notify_admin('Unprotected {} position!!!'.format(symbol))
+
             if exists(limit_orders):
                 pass
                 # min_price, max_price = get_bf_orders_min_max_price(stop_orders)
@@ -172,11 +179,10 @@ async def tester(bf, dm, symbol, candle_type):
                     await bf.place_limit_order(symbol, -a1 / 3, p0 * 1.3, True, None)
                     await bf.place_limit_order(symbol, -a1 / 3, p0 * 1.4, True, None)
                 
-                # if eligible_for_stop:
-                #     await bf.place_stop_order(symbol, -a0 / 2, p0 / min_profit_ratio, True, None)
-                # else:
-                #     notify_admin('Unprotected {} position!!!'.format(symbol))
-            
+            if not exists(dilution_orders):
+                if bf.positions[symbol]['amount'] > 0 and last > position['price'] * 1.001:
+                    await bf.lay_out_smart_buy_orders(symbol, last * 1.003, last * 1.01, 1.01, 0.3, 8)
+
             # pair_acq_orders = bf.query_orders(symbol, position['amount'], 'LIMIT', 222)
             # pair_liq_orders = bf.query_orders(symbol, -position['amount'], 'LIMIT', 222)
             # if not exists(pair_acq_orders) and not exists(pair_liq_orders):
