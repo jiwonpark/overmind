@@ -111,12 +111,17 @@ def upbit_get(api, query, query_string):
     else:
         res = requests.get(server_url + api, params=query, headers=headers)
 
+    if res.status_code != 200:
+        print(res.status_code)
+        print(res.headers)
+
     if res.status_code == 429:
         time.sleep(10)
         return upbit_get(api, query, query_string)
+    elif res.status_code == 502:
+        time.sleep(10)
+        return upbit_get(api, query, query_string)
 
-    print(res.status_code)
-    print(res.headers)
     print(res.headers['Remaining-Req'])
 
     return res.json()
