@@ -12,6 +12,8 @@ def history_condition(chart, i):
     price_30m.append(chart.trends['30m']['sma20'])
     price_30m.append(chart.trends['30m']['sma60'])
     price_30m.append(chart.trends['30m']['sma120'])
+    price_30m.append(chart.trends['30m']['sma5r20'])
+    price_30m.append(chart.trends['30m']['sma10r20'])
 
     diff_30m = []
     diff_30m.append(chart.trends['30m']['sma5.diff'])
@@ -19,6 +21,8 @@ def history_condition(chart, i):
     diff_30m.append(chart.trends['30m']['sma20.diff'])
     diff_30m.append(chart.trends['30m']['sma60.diff'])
     diff_30m.append(chart.trends['30m']['sma120.diff'])
+    diff_30m.append(chart.trends['30m']['sma5r20.diff'])
+    diff_30m.append(chart.trends['30m']['sma10r20.diff'])
 
     diff_diff_30m = []
     diff_diff_30m.append(chart.trends['30m']['sma5.diff.diff'])
@@ -26,57 +30,66 @@ def history_condition(chart, i):
     diff_diff_30m.append(chart.trends['30m']['sma20.diff.diff'])
     diff_diff_30m.append(chart.trends['30m']['sma60.diff.diff'])
     diff_diff_30m.append(chart.trends['30m']['sma120.diff.diff'])
+    diff_diff_30m.append(chart.trends['30m']['sma5r20.diff.diff'])
+    diff_diff_30m.append(chart.trends['30m']['sma10r20.diff.diff'])
 
     price = chart.data['30m'][i-1,CLOSE_INDEX]
 
     match = True
 
-    match = match and (diff_diff_30m[0][dates[i-1]] > 0 or diff_30m[0][dates[i-1]] > 0)
-    match = match and (diff_diff_30m[1][dates[i-1]] > 0 or diff_30m[1][dates[i-1]] > 0)
-    match = match and (diff_diff_30m[2][dates[i-1]] > 0 or diff_30m[2][dates[i-1]] > 0)
-    match = match and (diff_diff_30m[3][dates[i-1]] > 0 or diff_30m[3][dates[i-1]] > 0)
-    match = match and (diff_diff_30m[4][dates[i-1]] > 0 or diff_30m[4][dates[i-1]] > 0)
+    # relative_pp = chart.trends['30m']['sma5'][dates[i-2]] / chart.trends['30m']['sma20'][dates[i-2]]
+    # relative_p  = chart.trends['30m']['sma5'][dates[i-1]] / chart.trends['30m']['sma20'][dates[i-1]]
+
+    # if relative_p > relative_pp and 0.99 < relative_p and relative_p < 1.0:
+    #     return True
+    # else:
+    #     return False
+
+    # THRESHOLD = 0.005
+    # divergence = price_30m[6][dates[i-1]] / price_30m[2][dates[i-1]]
+    # # match = match and -THRESHOLD < divergence and divergence < THRESHOLD
+    # match = match and -THRESHOLD < divergence and divergence < 0
+
+    # THRESHOLD = 0.0003
+    # THRESHOLD = 0.001
+    # match = match and -THRESHOLD < diff_30m[0][dates[i-1]] and diff_30m[0][dates[i-1]] < THRESHOLD
+    # match = match and -THRESHOLD < diff_30m[1][dates[i-1]] and diff_30m[1][dates[i-1]] < THRESHOLD
+    # match = match and -THRESHOLD < diff_30m[2][dates[i-1]] and diff_30m[2][dates[i-1]] < THRESHOLD
+    # match = match and -THRESHOLD < diff_30m[3][dates[i-1]] and diff_30m[3][dates[i-1]] < THRESHOLD
+    # match = match and -THRESHOLD < diff_30m[4][dates[i-1]] and diff_30m[4][dates[i-1]] < THRESHOLD
+
+    # match = match and price_30m[5][dates[i-1]] < 0
+    match = match and price_30m[6][dates[i-1]] < 0
+
+    # match = match and (diff_diff_30m[0][dates[i-1]] > 0)
+    match = match and (diff_diff_30m[1][dates[i-1]] > 0)
+    # match = match and (diff_diff_30m[2][dates[i-1]] > 0)
+    # match = match and (diff_diff_30m[3][dates[i-1]] > 0)
+    # match = match and (diff_diff_30m[4][dates[i-1]] > 0)
     if not match:
         return False
 
     # match = match and diff_30m[0][dates[i-1]] > 0
     # match = match and diff_30m[1][dates[i-1]] > 0
     # match = match and diff_30m[2][dates[i-1]] > 0
-    # match = match and diff_30m[3][dates[i-1]] > 0
+    match = match and diff_30m[3][dates[i-1]] > 0
     # match = match and diff_30m[4][dates[i-1]] > 0
     # if not match:
     #     return False
+    
+    # match = match and price_30m_rel[dates[i-1]] < 0
 
-    # maximas = chart.trends['30m']['sma5.maximas']
-    # match = match and (i - max(maximas[maximas < i]) > 50 if len(maximas[maximas < i]) > 0 else False)
+    if not match:
+        return False
 
-    # maximas = chart.trends['30m']['sma10.maximas']
-    # match = match and (i - max(maximas[maximas < i]) > 50 if len(maximas[maximas < i]) > 0 else False)
-
-    # maximas = chart.trends['30m']['sma20.maximas']
-    # match = match and (i - max(maximas[maximas < i]) > 50 if len(maximas[maximas < i]) > 0 else False)
-
-    # maximas = chart.trends['30m']['sma60.maximas']
-    # match = match and (i - max(maximas[maximas < i]) > 50 if len(maximas[maximas < i]) > 0 else False)
-
-    # maximas = chart.trends['30m']['sma120.maximas']
-    # match = match and (i - max(maximas[maximas < i]) > 50 if len(maximas[maximas < i]) > 0 else False)
-
-    minimas = chart.trends['30m']['sma5.minimas']
-    match = match and (i - max(minimas[minimas < i]) < 2  if len(minimas[minimas < i]) > 0 else False)
-
-    # minimas = chart.trends['30m']['sma10.minimas']
-    # match = match and (i - max(minimas[minimas < i]) < 2 if len(minimas[minimas < i]) > 0 else False)
-
-    # minimas = chart.trends['30m']['sma20.minimas']
-    # match = match and (i - max(minimas[minimas < i]) < 2 if len(minimas[minimas < i]) > 0 else False)
-
-    # minimas = chart.trends['30m']['sma60.minimas']
-    # match = match and (i - max(minimas[minimas < i]) < 2 if len(minimas[minimas < i]) > 0 else False)
-
-    # minimas = chart.trends['30m']['sma120.minimas']
-    # match = match and (i - max(minimas[minimas < i]) < 2 if len(minimas[minimas < i]) > 0 else False)
-
+# def get_maximas(dates, diff, diffdiff):
+#     a = []
+#     for i in range(len(diff)):
+#         # print(diff[dates[i]], diffdiff[dates[i]])
+#         # print(str(mdates.num2date(dates[i])))
+#         if -THRESHOLD < diff[dates[i]] and diff[dates[i]] < THRESHOLD and diffdiff[dates[i]] < -THRESHOLD2:
+#             a.append(i)
+#     return a
 
     if not match:
         return False
@@ -110,11 +123,12 @@ def history_condition(chart, i):
 def this_candle_condition(this_candle, chart, i):
     match = True
 
-    # dates = chart.trends['30m']['dates']
-    # price_30m = chart.trends['30m']['sma20']
+    dates = chart.trends['30m']['dates']
+    match = match and this_candle[OPEN_INDEX] < chart.trends['30m']['sma20'][dates[i - 1]]
+    match = match and this_candle[HIGH_INDEX] > chart.trends['30m']['sma20'][dates[i - 1]]
 
-    # match = match and this_candle[OPEN_INDEX] < price_30m[dates[i - 1]]
-    # match = match and this_candle[HIGH_INDEX] > price_30m[dates[i - 1]]
+    # data = chart.data['30m']
+    # match = match and data[i,VOLUME_RATIO_INDEX] > 3
 
     return match
 

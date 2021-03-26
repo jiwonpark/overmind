@@ -1,11 +1,8 @@
 alias cleanup="ps -ef | grep jupyter | grep vscode | grep -v grep | awk '{print $2}' | xargs -I {} kill {}"
 alias check="ps -ef | grep jupyter | grep -v grep"
 
-alias deploy-amber='(cd ../amber-release; ls *.py | xargs -I {} cp ../overmind/{} .)'
-alias release-amber='(cd ../amber-release; zip -r ../amber-release.zip . -x '*.git*' -x '__pycache__/' -x '__pycache__/*' -x keys.json)'
-
-alias deploy-brandy='(cd ../brandy-release; ls *.py | xargs -I {} cp ../overmind/{} .)'
-alias release-brandy='(cd ../brandy-release; zip -r ../brandy-release.zip . -x '*.git*' -x '__pycache__/' -x '__pycache__/*' -x keys.json)'
+alias deploy-bordello='(cd ../bordello-release; ls *.py | xargs -I {} cp ../overmind/{} .)'
+alias release-bordello='(cd ../bordello-release; zip -r ../bordello-release.zip . -x '*.git*' -x '__pycache__/' -x '__pycache__/*' -x keys.json)'
 
 alias deploy-elsa='(cd ../elsa-release; ls *.py | xargs -I {} cp ../overmind/{} .)'
 alias release-elsa='(cd ../elsa-release; zip -r ../elsa-release.zip . -x '*.git*' -x '__pycache__/' -x '__pycache__/*' -x keys.json)'

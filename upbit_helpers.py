@@ -111,18 +111,26 @@ def upbit_get(api, query, query_string):
     else:
         res = requests.get(server_url + api, params=query, headers=headers)
 
-    if res.status_code != 200:
+    if res.status_code == 400:
+        print(res.json()['error'])
+    elif res.status_code == 429:
+        # print('Retrying...')
+        pass
+    elif res.status_code != 200:
         print(res.status_code)
         print(res.headers)
 
     if res.status_code == 429:
-        time.sleep(10)
+        time.sleep(1)
+        return upbit_get(api, query, query_string)
+    if res.status_code == 484:
+        time.sleep(1)
         return upbit_get(api, query, query_string)
     elif res.status_code == 502:
-        time.sleep(10)
+        time.sleep(1)
         return upbit_get(api, query, query_string)
 
-    print(res.headers['Remaining-Req'])
+    # print(res.headers['Remaining-Req'])
 
     return res.json()
 
@@ -146,12 +154,31 @@ def upbit_post(api, query, query_string):
     
     res = requests.post(server_url + api, params=query, headers=headers)
 
-    while res.status_code == 429:
-        res = requests.post(server_url + api, params=query, headers=headers)
+    if res.status_code in [200, 201]:
+        return res.json()
 
-    # print(res.status_code)
-    # print(res.headers['Remaining-Req'])
+    if res.status_code == 429:
+        pass
+    else:
+        print(res.status_code)
+        print(res.headers)
 
+    if res.status_code == 400:
+        print(res.json()['error'])
+        # {'message': '주문가능한 금액(ICX)이 부족합니다.', 'name': 'insufficient_funds_ask'}
+        if res.json()['error']['name'] == 'insufficient_funds_ask':
+            return res.json()
+    elif res.status_code == 429:
+        # print('Retrying...')
+        time.sleep(1)
+        return upbit_post(api, query, query_string)
+    elif res.status_code == 484:
+        time.sleep(1)
+        return upbit_post(api, query, query_string)
+    elif res.status_code == 502:
+        time.sleep(1)
+        return upbit_post(api, query, query_string)
+    
     return res.json()
 
 def upbit_delete(api, query, query_string):
@@ -173,6 +200,27 @@ def upbit_delete(api, query, query_string):
     headers = {"Authorization": authorize_token}
     
     res = requests.delete(server_url + api, params=query, headers=headers)
+
+    if res.status_code == 400:
+        print(res.json()['error'])
+    elif res.status_code == 429:
+        # print('Retrying...')
+        pass
+    elif res.status_code != 200:
+        print(res.status_code)
+        print(res.headers)
+
+    if res.status_code == 429:
+        time.sleep(1)
+        return upbit_delete(api, query, query_string)
+    elif res.status_code == 484:
+        time.sleep(1)
+        return upbit_delete(api, query, query_string)
+    elif res.status_code == 502:
+        time.sleep(1)
+        return upbit_delete(api, query, query_string)
+
+    # print(res.headers['Remaining-Req'])
 
     return res.json()
 
@@ -259,7 +307,7 @@ def post_limit_order(symbol, volume, price):
     else:
         side = 'ask'
     # price = '%f' % ceil_to_n_sigdits(price, 4)
-    print('order param', symbol, '{:.20f}'.format(volume), price)
+    # print('order param', symbol, '{:.20f}'.format(volume), price)
     query = {
         'market': symbol,
         'side': side,
@@ -296,6 +344,20 @@ def post_market_buy_order(symbol, amount_in_base_currency):
     order_quota.push()
     return data
 
+def post_market_sell_order(symbol, amount):
+    assert(amount > 0)
+    query = {
+        'market': symbol,
+        'side': 'ask',
+        'volume': '{:.20f}'.format(amount),
+        'ord_type': 'market',
+    }
+    query_string = urlencode(query).encode()
+    order_quota.pace()
+    data = upbit_post("/v1/orders", query, query_string)
+    order_quota.push()
+    return data
+
 def get_order(uuid):
     query = {
         'uuid': uuid,
@@ -308,10 +370,16 @@ def get_order(uuid):
     order_quota.push()
     return data
 
-def get_orders(state):
+def get_orders(state, limit = None, symbol = None):
+    if limit is None:
+        limit = 100
     query = {
         'state': state,
+        'limit': limit,
+        'order_by': 'asc'
     }
+    if symbol is not None:
+        query['market'] = symbol
     query_string = urlencode(query)
 
     # uuids = [
@@ -400,6 +468,8 @@ def round_up_to_unit(price, get_price_unit):
     unit = get_price_unit(price)
     return math.ceil(price / unit) * unit
 
+# https://docs.upbit.com/docs/market-info-trade-price-detail
+
 upbit_krw_price_unit = [
     [ 2000000, 1000 ],
     [ 1000000, 500 ],
@@ -478,21 +548,31 @@ async def start_quickie(pair, amount_krw, target_profit_ratios):
             a = a0 / n
         else:
             a = a0 - a1
-        orders.append(post_limit_order(pair, -a, round_up_to_unit(average_bought_price * target_profit_ratios[i], get_upbit_krw_price_unit)))
+        max_tries = 30
+        tries = 0
+        while True:
+            if tries == max_tries:
+                break
+            sell_order = post_limit_order(pair, -a, round_up_to_unit(average_bought_price * target_profit_ratios[i], get_upbit_krw_price_unit))
+            tries += 1
+            if 'error' not in sell_order:
+                break
+            print(sell_order)
+        orders.append(sell_order)
         a1 += a
-    for i in range(len(orders)):
-        order = orders[i]
-        data = await wait_order_fulfillment(order['uuid'], 2)
-        target_sell_price = float(order['price'])
-        average_sold_price = get_average_price(data)
-        amount_sold = float(data['executed_volume'])
-        print('here')
-        print('LIQUIDATION SELL[{}]@{} ({} {}) ({:.0f} KRW) FULFILLED!'.format(i,
-            fp(target_sell_price / average_bought_price),
-            fp(average_sold_price / average_bought_price),
-            fp(target_profit_ratios[i]),
-            (average_sold_price - average_bought_price) * amount_sold))
-        print('there')
+    # for i in range(len(orders)):
+    #     order = orders[i]
+    #     data = await wait_order_fulfillment(order['uuid'], 2)
+    #     target_sell_price = float(order['price'])
+    #     average_sold_price = get_average_price(data)
+    #     amount_sold = float(data['executed_volume'])
+    #     print('here')
+    #     print('LIQUIDATION SELL[{}]@{} ({} {}) ({:.0f} KRW) FULFILLED!'.format(i,
+    #         fp(target_sell_price / average_bought_price),
+    #         fp(average_sold_price / average_bought_price),
+    #         fp(target_profit_ratios[i]),
+    #         (average_sold_price - average_bought_price) * amount_sold))
+    #     print('there')
     return True
 
 ####################################################################################################################################
